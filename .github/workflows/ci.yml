@@ -96,6 +96,10 @@ jobs:
     name: 🐳 Docker Build + Trivy Scan
     runs-on: ubuntu-latest
     needs: test
+    permissions:
+      contents: read
+      security-events: write   # Required for SARIF upload to GitHub Security tab
+
     steps:
       - uses: actions/checkout@v4
 
