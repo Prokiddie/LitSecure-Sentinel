@@ -1,0 +1,8 @@
+<svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Shield outer (yellow) -->
+  <path d="M6 6 L28 2 L50 6 L50 28 Q50 44 28 54 Q6 44 6 28 Z" fill="#FFD600"/>
+  <!-- Shield inner cutout (dark) -->
+  <path d="M10 9 L28 5.5 L46 9 L46 28 Q46 41 28 50 Q10 41 10 28 Z" fill="#05080F"/>
+  <!-- Lightning bolt (yellow) -->
+  <path d="M24 16 L20 30 L27 30 L23 43 L35 26 L28 26 L33 16 Z" fill="#FFD600"/>
+</svg>

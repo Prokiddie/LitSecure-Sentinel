@@ -1,0 +1,6 @@
+{
+  "name": "LitSecure Sentinel",
+  "description": "Unified Cyber Incident Tracking & Response Platform for Malawi",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

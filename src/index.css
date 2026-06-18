@@ -1,0 +1,417 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Bebas+Neue&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans:    "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Orbitron", "Space Grotesk", ui-sans-serif, sans-serif;
+  --font-grotesk: "Space Grotesk", ui-sans-serif, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Yellow accent palette */
+  --color-accent:        #FFD600;
+  --color-accent-hover:  #FFF176;
+  --color-accent-dim:    rgba(255, 214, 0, 0.12);
+  --color-accent-border: rgba(255, 214, 0, 0.3);
+
+  /* Dark base */
+  --color-base:     #05080F;
+  --color-surface:  #0A0E1A;
+  --color-surface2: #111827;
+  --color-border:   rgba(255,255,255,0.07);
+}
+
+/* ─── Global Reset ────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  font-size: 14px; /* base scale — all rem units inherit from here */
+  line-height: 1.55;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background-color: #05080F;
+  color: #F1F5F9;
+  font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Typography utilities ───────────────────────────────────────────────── */
+.font-bebas    { font-family: "Bebas Neue", sans-serif; letter-spacing: 0.05em; }
+.font-grotesk  { font-family: "Space Grotesk", sans-serif; }
+.font-orbitron { font-family: "Orbitron", sans-serif; letter-spacing: 0.08em; }
+
+/* ─── Yellow accent helpers ──────────────────────────────────────────────── */
+.text-accent  { color: #FFD600; }
+.bg-accent    { background-color: #FFD600; }
+.border-accent { border-color: #FFD600; }
+
+.btn-accent {
+  background-color: #FFD600;
+  color: #05080F;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+}
+.btn-accent:hover  { background-color: #FFF176; box-shadow: 0 0 28px rgba(255,214,0,0.35); }
+.btn-accent:active { transform: scale(0.97); }
+
+/* ─── Hero globe background ──────────────────────────────────────────────── */
+.hero-globe {
+  background-image: url('/globe_hero.png');
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+}
+
+/* ─── Glowing yellow line accent ─────────────────────────────────────────── */
+.glow-yellow {
+  box-shadow: 0 0 18px rgba(255, 214, 0, 0.4), 0 0 40px rgba(255, 214, 0, 0.15);
+}
+
+/* ─── Animations ─────────────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+@keyframes ping-slow {
+  75%, 100% { transform: scale(1.8); opacity: 0; }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-6px); }
+}
+
+.animate-fade-in-up { animation: fadeInUp 0.6s ease-out forwards; }
+.animate-fade-in    { animation: fadeIn 0.4s ease-out forwards; }
+.animate-float      { animation: float 4s ease-in-out infinite; }
+
+/* ─── Scrollbars ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #05080F; }
+::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #FFD600; }
+
+/* Tab nav — hide scrollbar but keep scroll functionality */
+.scrollbar-none::-webkit-scrollbar  { display: none; }
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Thin scrollbar for KPI bar and data tables */
+.scrollbar-thin::-webkit-scrollbar       { height: 3px; width: 3px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255,214,0,0.3); border-radius: 2px; }
+.scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #FFD600; }
+.scrollbar-thin { scrollbar-width: thin; scrollbar-color: rgba(255,214,0,0.3) transparent; }
+
+/* Tab nav wrapper — ensure smooth momentum scroll on iOS */
+.tab-nav-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding-bottom: 1px; /* prevents border-b-2 clipping */
+}
+.tab-nav-scroll::-webkit-scrollbar { display: none; }
+
+
+/* ─── Tab active underline ───────────────────────────────────────────────── */
+.tab-active {
+  color: #FFD600 !important;
+  border-bottom: 2px solid #FFD600;
+}
+.tab-inactive {
+  color: #94a3b8;
+  border-bottom: 2px solid transparent;
+}
+.tab-inactive:hover { color: #e2e8f0; border-bottom-color: rgba(255,214,0,0.3); }
+
+/* ─── Card surface ───────────────────────────────────────────────────────── */
+.card {
+  background: rgba(10, 14, 26, 0.85);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  backdrop-filter: blur(12px);
+}
+.card:hover { border-color: rgba(255, 214, 0, 0.2); }
+
+/* ─── Glassmorphism form card ────────────────────────────────────────────── */
+.glass-form {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 214, 0, 0.02) 50%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 16px;
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+.glass-form::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 214, 0, 0.4), transparent);
+  pointer-events: none;
+}
+
+/* ─── Global select / option dark theme ─────────────────────────────────── */
+/* Native OS dropdown pickers IGNORE most CSS on the option list.            */
+/* These rules force a consistently dark popup on all browsers/platforms.    */
+select {
+  background-color: #0A0E1A;
+  color: #f1f5f9;
+  border-color: rgba(255,255,255,0.10);
+}
+select:focus {
+  outline: none;
+  border-color: rgba(255, 214, 0, 0.5);
+  box-shadow: 0 0 0 3px rgba(255, 214, 0, 0.08);
+}
+/* Option elements inside the native popup */
+select option {
+  background-color: #0A0E1A;
+  color: #f1f5f9;
+}
+select option:checked,
+select option:hover {
+  background-color: #1e2740;
+  color: #FFD600;
+}
+
+/* ─── Glassmorphism input fields ─────────────────────────────────────────── */
+.glass-input {
+  background: rgba(5, 8, 15, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 10px;
+  color: #f1f5f9;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  backdrop-filter: blur(8px);
+}
+.glass-input:focus {
+  outline: none;
+  border-color: rgba(255, 214, 0, 0.6);
+  background: rgba(5, 8, 15, 0.8);
+  box-shadow: 0 0 0 3px rgba(255, 214, 0, 0.08), 0 0 20px rgba(255, 214, 0, 0.1);
+}
+.glass-input::placeholder { color: #475569; }
+
+/* ─── Cyber terminal ─────────────────────────────────────────────────────── */
+.terminal-bg {
+  background: #020409;
+  border: 1px solid rgba(0, 255, 65, 0.15);
+  border-radius: 12px;
+  font-family: "JetBrains Mono", monospace;
+  box-shadow:
+    0 0 40px rgba(0, 255, 65, 0.05),
+    inset 0 0 60px rgba(0, 0, 0, 0.5);
+  position: relative;
+  overflow: hidden;
+}
+.terminal-bg::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.08) 2px,
+    rgba(0, 0, 0, 0.08) 4px
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+.terminal-line { position: relative; z-index: 1; }
+.text-terminal-green { color: #00ff41; }
+.text-terminal-yellow { color: #ffcc00; }
+.text-terminal-red { color: #ff4444; }
+.text-terminal-cyan { color: #00e5ff; }
+.text-terminal-dim { color: #1a4a1a; }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.cursor-blink { animation: blink 1s step-end infinite; }
+
+@keyframes typewriter {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+@keyframes scan {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+.scan-line {
+  position: absolute;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 255, 65, 0.15), transparent);
+  animation: scan 4s linear infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ─── Status badge colours ───────────────────────────────────────────────── */
+.badge-critical  { background: rgba(239,68,68,0.12);  color: #f87171; border: 1px solid rgba(239,68,68,0.25); }
+.badge-high      { background: rgba(251,146,60,0.12); color: #fb923c; border: 1px solid rgba(251,146,60,0.25); }
+.badge-medium    { background: rgba(250,204,21,0.12); color: #facc15; border: 1px solid rgba(250,204,21,0.25); }
+.badge-low       { background: rgba(148,163,184,0.12);color: #94a3b8; border: 1px solid rgba(148,163,184,0.25); }
+
+.status-reported     { background: rgba(148,163,184,0.1);  color: #94a3b8; border: 1px solid rgba(148,163,184,0.2); }
+.status-investigating{ background: rgba(250,204,21,0.1);   color: #facc15; border: 1px solid rgba(250,204,21,0.2); }
+.status-contained    { background: rgba(251,146,60,0.1);   color: #fb923c; border: 1px solid rgba(251,146,60,0.2); }
+.status-resolved     { background: rgba(34,197,94,0.1);    color: #4ade80; border: 1px solid rgba(34,197,94,0.2); }
+
+/* ─── Orbitron cyber headings ────────────────────────────────────────────── */
+.cyber-heading {
+  font-family: "Orbitron", sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.cyber-heading-sm {
+  font-family: "Orbitron", sans-serif;
+  letter-spacing: 0.06em;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+/* ─── Cyber glow effects ─────────────────────────────────────────────────── */
+.glow-green  { box-shadow: 0 0 16px rgba(0,255,65,0.3),  0 0 40px rgba(0,255,65,0.1);  }
+.glow-cyan   { box-shadow: 0 0 16px rgba(0,229,255,0.3), 0 0 40px rgba(0,229,255,0.1); }
+.glow-red    { box-shadow: 0 0 16px rgba(255,68,68,0.3), 0 0 40px rgba(255,68,68,0.1); }
+.glow-purple { box-shadow: 0 0 16px rgba(168,85,247,0.3),0 0 40px rgba(168,85,247,0.1);}
+
+/* ─── Partner logo badges (login page) ───────────────────────────────────── */
+.partner-logo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  transition: border-color 0.2s ease, background 0.2s ease;
+  cursor: default;
+  min-width: 64px;
+}
+.partner-logo:hover {
+  border-color: rgba(255,214,0,0.25);
+  background: rgba(255,214,0,0.04);
+}
+.partner-logo-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.partner-logo-name {
+  font-family: "Orbitron", sans-serif;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+/* ─── Cyber tool panel ───────────────────────────────────────────────────── */
+.tool-result-box {
+  background: rgba(2, 4, 9, 0.8);
+  border: 1px solid rgba(0, 255, 65, 0.12);
+  border-radius: 10px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+  padding: 14px 16px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 360px;
+  overflow-y: auto;
+  color: #a3e635;
+  line-height: 1.7;
+}
+.tool-result-box .key   { color: #67e8f9; }
+.tool-result-box .val   { color: #a3e635; }
+.tool-result-box .err   { color: #f87171; }
+.tool-result-box .warn  { color: #facc15; }
+.tool-result-box .head  { color: #c084fc; }
+
+/* ─── Responsive breakpoints ─────────────────────────────────────────────── */
+
+/* Mobile: hide long labels, compress padding */
+@media (max-width: 640px) {
+  .max-w-\[1600px\] { padding-left: 12px; padding-right: 12px; }
+  .hero-globe { height: 200px !important; }
+  .hero-globe h1 { font-size: 2.5rem !important; line-height: 1 !important; }
+  .hero-globe p  { font-size: 0.7rem !important; }
+
+  /* Stack KPI bar items */
+  .kpi-bar-scroll { gap: 12px; }
+  .kpi-item { min-width: 90px; }
+
+  /* Full-width cards on mobile */
+  .card { border-radius: 8px; }
+
+  /* Shrink tab nav text even further on tiny screens */
+  .tab-nav-scroll button { padding: 6px 8px; font-size: 11px; gap: 4px; }
+}
+
+/* Tablet: 2-col grids */
+@media (max-width: 1024px) {
+  .lg\:grid-cols-12 { grid-template-columns: 1fr !important; }
+  .lg\:col-span-8   { grid-column: span 1; }
+  .lg\:col-span-4   { grid-column: span 1; }
+}
+
+/* Responsive helper classes */
+.responsive-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 640px) {
+  .responsive-2col { grid-template-columns: 1fr; }
+}
+
+.responsive-3col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+@media (max-width: 900px)  { .responsive-3col { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 540px)  { .responsive-3col { grid-template-columns: 1fr; } }
+
+.responsive-4col {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+@media (max-width: 1100px) { .responsive-4col { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 540px)  { .responsive-4col { grid-template-columns: 1fr; } }
+

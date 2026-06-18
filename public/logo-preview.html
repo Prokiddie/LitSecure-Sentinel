@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LitSecure Logo — Design Preview</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #05080F; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 48px 24px; gap: 48px; }
+
+    h2 { font-family: 'Space Grotesk', sans-serif; color: #FFD600; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 16px; }
+
+    .preview-card {
+      background: #0A0E1A;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 40px 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 32px;
+      width: 100%;
+      max-width: 800px;
+    }
+
+    .logo-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 48px;
+      flex-wrap: wrap;
+      width: 100%;
+    }
+
+    .logo-variant { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+    .variant-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #475569; letter-spacing: 0.1em; text-transform: uppercase; }
+
+    /* ── On dark bg ── */
+    .bg-dark { background: #05080F; border-radius: 12px; padding: 24px 32px; }
+    /* ── On yellow bg ── */
+    .bg-yellow { background: #FFD600; border-radius: 12px; padding: 24px 32px; }
+    /* ── On white bg ── */
+    .bg-white { background: #ffffff; border-radius: 12px; padding: 24px 32px; }
+
+    /* ── ICON ONLY sizes ── */
+    .icon-sizes { display: flex; align-items: flex-end; gap: 20px; }
+
+    .section-divider {
+      width: 100%;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      margin: 8px 0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  SECTION 1 — Primary Logo (Dark BG)                                   -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="preview-card">
+    <h2>Primary Logo Variants</h2>
+
+    <div class="logo-row">
+
+      <!-- VARIANT A — Full lockup dark -->
+      <div class="logo-variant">
+        <div class="bg-dark">
+          <svg width="220" height="56" viewBox="0 0 220 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Shield icon -->
+            <g>
+              <!-- Shield body -->
+              <path d="M6 6 L28 2 L50 6 L50 28 Q50 44 28 54 Q6 44 6 28 Z" fill="#FFD600"/>
+              <!-- Inner shield cutout -->
+              <path d="M10 9 L28 5.5 L46 9 L46 28 Q46 41 28 50 Q10 41 10 28 Z" fill="#05080F"/>
+              <!-- Lightning bolt -->
+              <path d="M24 16 L20 30 L27 30 L23 43 L35 26 L28 26 L33 16 Z" fill="#FFD600"/>
+            </g>
+
+            <!-- LITSECURE wordmark -->
+            <text x="62" y="30" font-family="'Bebas Neue', sans-serif" font-size="28" letter-spacing="3" fill="#FFFFFF">LITSECURE</text>
+            <!-- Subtitle -->
+            <text x="63" y="46" font-family="'JetBrains Mono', monospace" font-size="8.5" letter-spacing="2.5" fill="#FFD600">SENTINEL PLATFORM</text>
+          </svg>
+        </div>
+        <span class="variant-label">Primary — Dark</span>
+      </div>
+
+      <!-- VARIANT B — Full lockup on yellow -->
+      <div class="logo-variant">
+        <div class="bg-yellow">
+          <svg width="220" height="56" viewBox="0 0 220 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <g>
+              <path d="M6 6 L28 2 L50 6 L50 28 Q50 44 28 54 Q6 44 6 28 Z" fill="#05080F"/>
+              <path d="M10 9 L28 5.5 L46 9 L46 28 Q46 41 28 50 Q10 41 10 28 Z" fill="#FFD600"/>
+              <path d="M24 16 L20 30 L27 30 L23 43 L35 26 L28 26 L33 16 Z" fill="#05080F"/>
+            </g>
+            <text x="62" y="30" font-family="'Bebas Neue', sans-serif" font-size="28" letter-spacing="3" fill="#05080F">LITSECURE</text>
+            <text x="63" y="46" font-family="'JetBrains Mono', monospace" font-size="8.5" letter-spacing="2.5" fill="#05080F">SENTINEL PLATFORM</text>
+          </svg>
+        </div>
+        <span class="variant-label">Reversed — Yellow</span>
+      </div>
+
+      <!-- VARIANT C — Full lockup on white -->
+      <div class="logo-variant">
+        <div class="bg-white">
+          <svg width="220" height="56" viewBox="0 0 220 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <g>
+              <path d="M6 6 L28 2 L50 6 L50 28 Q50 44 28 54 Q6 44 6 28 Z" fill="#05080F"/>
+              <path d="M10 9 L28 5.5 L46 9 L46 28 Q46 41 28 50 Q10 41 10 28 Z" fill="#ffffff"/>
+              <path d="M24 16 L20 30 L27 30 L23 43 L35 26 L28 26 L33 16 Z" fill="#FFD600"/>
+            </g>
+            <text x="62" y="30" font-family="'Bebas Neue', sans-serif" font-size="28" letter-spacing="3" fill="#05080F">LITSECURE</text>
+            <text x="63" y="46" font-family="'JetBrains Mono', monospace" font-size="8.5" letter-spacing="2.5" fill="#475569">SENTINEL PLATFORM</text>
+          </svg>
+        </div>
+        <span class="variant-label">Light — White</span>
+      </div>
+
+    </div>
+
+    <div class="section-divider"></div>
+
+    <!-- ICON ONLY — multiple sizes -->
+    <h2>Icon Mark — Size Scale</h2>
+    <div class="icon-sizes">
+      <!-- 16px -->
+      <div class="logo-variant">
+        <div class="bg-dark" style="padding:12px">
+          <svg width="16" height="16" viewBox="0 0 56 56" fill="none">
+            <path d="M6 6 L28 2 L50 6 L50 28 Q50 44 28 54 Q6 44 6 28 Z" fill="#FFD600"/>
+            <path d="M10 9 L28 5.5 L46 9 L46 28 Q46 41 28 50 Q10 41 10 28 Z" fill="#05080F"/>
+            <path d="M24 16 L20 30 L27 30 L23 43 L35 26 L28 26 L33 16 Z" fill="#FFD600"/>
+          </svg>
+        </div>
+        <span class="variant-label">16px</span>
+      </div>
+
+      <!-- 24px -->
+      <div class="logo-variant">
+        <div class="bg-dark" style="padding:12px">
+          <svg width="24" height="24" viewBox="0 0 56 56" fill="none">
+            <path d="M6 6 L28 2 L50 6 L50 28 Q50 44 28 54 Q6 44 6 28 Z" fill="#FFD600"/>
+            <path d="M10 9 L28 5.5 L46 9 L46 28 Q46 41 28 50 Q10 41 10 28 Z" fill="#05080F"/>
+            <path d="M24 16 L20 30 L27 30 L23 43 L35 26 L28 26 L33 16 Z" fill="#FFD600"/>
+          </svg>
+        </div>
+        <span class="variant-label">24px</span>
+      </div>
+
+      <!-- 32px -->
+      <div class="logo-variant">
+        <div class="bg-dark" style="padding:12px">
+          <svg width="32" height="32" viewBox="0 0 56 56" fill="none">
+            <path d="M6 6 L28 2 L50 6 L50 28 Q50 44 28 54 Q6 44 6 28 Z" fill="#FFD600"/>
+            <path d="M10 9 L28 5.5 L46 9 L46 28 Q46 41 28 50 Q10 41 10 28 Z" fill="#05080F"/>
+            <path d="M24 16 L20 30 L27 30 L23 43 L35 26 L28 26 L33 16 Z" fill="#FFD600"/>
+          </svg>
+        </div>
+        <span class="variant-label">32px</span>
+      </div>
+
+      <!-- 48px -->
+      <div class="logo-variant">
+        <div class="bg-dark" style="padding:16px">
+          <svg width="48" height="48" viewBox="0 0 56 56" fill="none">
+            <path d="M6 6 L28 2 L50 6 L50 28 Q50 44 28 54 Q6 44 6 28 Z" fill="#FFD600"/>
+            <path d="M10 9 L28 5.5 L46 9 L46 28 Q46 41 28 50 Q10 41 10 28 Z" fill="#05080F"/>
+            <path d="M24 16 L20 30 L27 30 L23 43 L35 26 L28 26 L33 16 Z" fill="#FFD600"/>
+          </svg>
+        </div>
+        <span class="variant-label">48px</span>
+      </div>
+
+      <!-- 64px -->
+      <div class="logo-variant">
+        <div class="bg-dark" style="padding:16px">
+          <svg width="64" height="64" viewBox="0 0 56 56" fill="none">
+            <path d="M6 6 L28 2 L50 6 L50 28 Q50 44 28 54 Q6 44 6 28 Z" fill="#FFD600"/>
+            <path d="M10 9 L28 5.5 L46 9 L46 28 Q46 41 28 50 Q10 41 10 28 Z" fill="#05080F"/>
+            <path d="M24 16 L20 30 L27 30 L23 43 L35 26 L28 26 L33 16 Z" fill="#FFD600"/>
+          </svg>
+        </div>
+        <span class="variant-label">64px</span>
+      </div>
+
+      <!-- 96px -->
+      <div class="logo-variant">
+        <div class="bg-dark" style="padding:20px">
+          <svg width="96" height="96" viewBox="0 0 56 56" fill="none">
+            <path d="M6 6 L28 2 L50 6 L50 28 Q50 44 28 54 Q6 44 6 28 Z" fill="#FFD600"/>
+            <path d="M10 9 L28 5.5 L46 9 L46 28 Q46 41 28 50 Q10 41 10 28 Z" fill="#05080F"/>
+            <path d="M24 16 L20 30 L27 30 L23 43 L35 26 L28 26 L33 16 Z" fill="#FFD600"/>
+          </svg>
+        </div>
+        <span class="variant-label">96px</span>
+      </div>
+    </div>
+
+    <div class="section-divider"></div>
+
+    <!-- Glow variant (for hero/splash) -->
+    <h2>Glow Effect — Hero Use</h2>
+    <div class="bg-dark" style="padding: 32px 48px;">
+      <svg width="72" height="72" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+        <path d="M6 6 L28 2 L50 6 L50 28 Q50 44 28 54 Q6 44 6 28 Z" fill="#FFD600" filter="url(#glow)"/>
+        <path d="M10 9 L28 5.5 L46 9 L46 28 Q46 41 28 50 Q10 41 10 28 Z" fill="#05080F"/>
+        <path d="M24 16 L20 30 L27 30 L23 43 L35 26 L28 26 L33 16 Z" fill="#FFD600" filter="url(#glow)"/>
+      </svg>
+    </div>
+
+    <div class="section-divider"></div>
+
+    <!-- Full stacked lockup -->
+    <h2>Stacked Lockup — Login / Splash Screen</h2>
+    <div class="bg-dark" style="padding: 40px 60px; display:flex; flex-direction:column; align-items:center; gap:14px;">
+      <svg width="80" height="80" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="glow2">
+            <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+            <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <path d="M6 6 L28 2 L50 6 L50 28 Q50 44 28 54 Q6 44 6 28 Z" fill="#FFD600" filter="url(#glow2)"/>
+        <path d="M10 9 L28 5.5 L46 9 L46 28 Q46 41 28 50 Q10 41 10 28 Z" fill="#05080F"/>
+        <path d="M24 16 L20 30 L27 30 L23 43 L35 26 L28 26 L33 16 Z" fill="#FFD600" filter="url(#glow2)"/>
+      </svg>
+      <div style="text-align:center">
+        <div style="font-family:'Bebas Neue',sans-serif; font-size:38px; color:#fff; letter-spacing:8px; line-height:1">LITSECURE</div>
+        <div style="font-family:'JetBrains Mono',monospace; font-size:9px; color:#FFD600; letter-spacing:4px; text-transform:uppercase; margin-top:4px">NATIONAL CYBER INTELLIGENCE</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  SECTION 2 — Color Palette Reference                                  -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="preview-card">
+    <h2>Brand Color Palette</h2>
+    <div style="display:flex; gap:20px; flex-wrap:wrap; justify-content:center">
+      <div style="text-align:center">
+        <div style="width:80px;height:80px;border-radius:12px;background:#FFD600;margin:0 auto 8px;border:1px solid rgba(255,255,255,0.1)"></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#94a3b8">#FFD600</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:11px;color:#e2e8f0;font-weight:600">Primary Yellow</div>
+      </div>
+      <div style="text-align:center">
+        <div style="width:80px;height:80px;border-radius:12px;background:#05080F;margin:0 auto 8px;border:1px solid rgba(255,255,255,0.12)"></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#94a3b8">#05080F</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:11px;color:#e2e8f0;font-weight:600">Deep Space</div>
+      </div>
+      <div style="text-align:center">
+        <div style="width:80px;height:80px;border-radius:12px;background:#0A0E1A;margin:0 auto 8px;border:1px solid rgba(255,255,255,0.1)"></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#94a3b8">#0A0E1A</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:11px;color:#e2e8f0;font-weight:600">Surface</div>
+      </div>
+      <div style="text-align:center">
+        <div style="width:80px;height:80px;border-radius:12px;background:#ffffff;margin:0 auto 8px;border:1px solid rgba(255,255,255,0.1)"></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#94a3b8">#FFFFFF</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:11px;color:#e2e8f0;font-weight:600">Text Primary</div>
+      </div>
+      <div style="text-align:center">
+        <div style="width:80px;height:80px;border-radius:12px;background:#94a3b8;margin:0 auto 8px;border:1px solid rgba(255,255,255,0.1)"></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#94a3b8">#94A3B8</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:11px;color:#e2e8f0;font-weight:600">Text Muted</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
