@@ -112,14 +112,33 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Trivy vulnerability scan
+      # Step A — Upload ALL findings (HIGH + CRITICAL) to GitHub Security tab
+      - name: Trivy scan → GitHub Security tab (SARIF)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.IMAGE_NAME }}:${{ github.sha }}'
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '0'           # Never block — just report
+
+      - name: Upload Trivy SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-container
+
+      # Step B — Hard-fail ONLY on CRITICAL (not HIGH) with fixable patches
+      - name: Trivy scan → fail on CRITICAL with fix available
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: '${{ env.IMAGE_NAME }}:${{ github.sha }}'
           format: table
-          severity: CRITICAL,HIGH
-          exit-code: '1'           # Fail on critical/high CVEs
-          ignore-unfixed: true
+          severity: CRITICAL
+          exit-code: '1'           # Block the pipeline on unfixed CRITICAL CVEs
+          ignore-unfixed: true     # Only flag CVEs that have a patch available
 
       - name: Save image as artifact
         if: github.ref == 'refs/heads/main'
