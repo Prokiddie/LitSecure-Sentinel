@@ -5,8 +5,11 @@ import {
   LogOut, User, Users, Search, X,
   ShieldCheck, AlertTriangle, Radio,
   Monitor, Code2, FileText, Settings, BookOpen,
-  MapPin, Zap, TrendingUp, FolderLock, Wifi, Brain
+  MapPin, Zap, TrendingUp, FolderLock, Wifi, Brain,
+  Contrast
 } from "lucide-react";
+import CommandPalette from "./components/CommandPalette";
+import ThreatHierarchy from "./components/ThreatHierarchy";
 import { Incident, NationalStats } from "./types";
 import { useRealTimeStats } from "./hooks/useRealTimeStats";
 import LiveKpiBar from "./components/LiveKpiBar";
@@ -240,6 +243,12 @@ export default function App() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [stats, setStats]         = useState<NationalStats | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("portal");
+  const [highContrast, setHighContrast] = useState(false);
+
+  // Apply high-contrast class to root
+  useEffect(() => {
+    document.documentElement.classList.toggle("high-contrast", highContrast);
+  }, [highContrast]);
   // ── Reset active tab to first allowed tab when user role changes ──────────
   const prevUserIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
@@ -431,6 +440,11 @@ export default function App() {
 
             {/* ── Right section ── */}
             <div className="flex items-center gap-3 shrink-0 ml-2">
+              {/* Command Palette trigger */}
+              <CommandPalette
+                onNavigate={(tabId) => setActiveTab(tabId as TabId)}
+                allowedTabIds={visibleTabs.map(t => t.id)}
+              />
               {/* Gemini AI status badge */}
               <div className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded border border-purple-500/30 bg-purple-500/5">
                 <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
@@ -439,9 +453,20 @@ export default function App() {
 
               {/* Threat index */}
               <div className="hidden md:flex items-center gap-1.5 text-[11px] font-mono">
-                <AlertTriangle className="w-3 h-3 text-orange-400" />
-                <span className="text-orange-400 font-bold">ELEVATED</span>
+                <AlertTriangle className={`w-3 h-3 ${incidents.some(i => i.severity === 'Critical' || i.severity === 'critical') ? 'text-red-400 animate-pulse' : 'text-orange-400'}`} />
+                <span className={`font-bold ${incidents.some(i => i.severity === 'Critical' || i.severity === 'critical') ? 'text-red-400' : 'text-orange-400'}`}>
+                  {incidents.some(i => i.severity === 'Critical' || i.severity === 'critical') ? 'CRITICAL' : 'ELEVATED'}
+                </span>
               </div>
+
+              {/* High-contrast toggle */}
+              <button
+                onClick={() => setHighContrast(p => !p)}
+                title="Toggle high-contrast mode"
+                className={`p-1.5 rounded transition ${highContrast ? 'text-[#FFD600] bg-[#FFD600]/10' : 'text-slate-600 hover:text-slate-300 hover:bg-white/5'}`}
+              >
+                <Contrast className="w-3.5 h-3.5" />
+              </button>
 
               <div className="w-px h-5 bg-white/10 hidden md:block" />
 
@@ -620,6 +645,17 @@ export default function App() {
                         </div>
                       ))}
                     </div>
+                  </div>
+
+                  {/* ── THREAT HIERARCHY ──────────────────────────────── */}
+                  <div className="card p-4">
+                    <ThreatHierarchy
+                      incidents={incidents}
+                      onSelectIncident={(id) => {
+                        setActiveTab("command");
+                        setGlobalSearch(id);
+                      }}
+                    />
                   </div>
 
                   {/* ── LIVE SECTOR NODES ────────────────────────────────── */}
