@@ -2,9 +2,10 @@
  * LitSecure Sentinel — useWarRoomWS React Hook
  * Provides a live WebSocket connection to the War Room server.
  * Handles auto-reconnect with exponential backoff.
+ * Wrapped in a React Context so the connection is shared across all components.
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 
 export interface WSIncident {
   id: string;
@@ -35,7 +36,9 @@ export interface WarRoomWSState {
 const BASE_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS  = 30_000;
 
-export function useWarRoomWS(): WarRoomWSState {
+const WarRoomWSContext = createContext<WarRoomWSState | null>(null);
+
+export function WarRoomWSProvider({ children }: { children: React.ReactNode }) {
   const [isConnected,    setIsConnected]    = useState(false);
   const [lastIncident,   setLastIncident]   = useState<WSIncident | null>(null);
   const [lastThreat,     setLastThreat]     = useState<any | null>(null);
@@ -122,5 +125,22 @@ export function useWarRoomWS(): WarRoomWSState {
     }
   }, []);
 
-  return { isConnected, lastIncident, lastThreat, lastChatMsg, connectedCount, sendChatMessage };
+  const value = React.useMemo(() => ({
+    isConnected,
+    lastIncident,
+    lastThreat,
+    lastChatMsg,
+    connectedCount,
+    sendChatMessage
+  }), [isConnected, lastIncident, lastThreat, lastChatMsg, connectedCount, sendChatMessage]);
+
+  return React.createElement(WarRoomWSContext.Provider, { value }, children);
+}
+
+export function useWarRoomWS(): WarRoomWSState {
+  const context = useContext(WarRoomWSContext);
+  if (!context) {
+    throw new Error("useWarRoomWS must be used within a WarRoomWSProvider");
+  }
+  return context;
 }

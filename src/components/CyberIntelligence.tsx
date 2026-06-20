@@ -3,13 +3,14 @@
  * Real working OSINT, Reconnaissance, Scanner & Digital Forensics tools.
  * Uses /api/cyber/* server-side proxies to real public APIs.
  */
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   Search, Globe, Wifi, Shield, FileSearch, Hash,
   Terminal, AlertTriangle, CheckCircle, Loader2,
   ChevronRight, Copy, ExternalLink, RefreshCw,
   Layers, Server, Lock, Scan, Database, Eye,
-  Network, Fingerprint, Clock, MapPin, Activity
+  Network, Fingerprint, Clock, MapPin, Activity,
+  Upload, File
 } from "lucide-react";
 
 interface Props { token: string; }
@@ -115,6 +116,7 @@ function IpLookup({ token }: { token: string }) {
       </div>
       {data && !loading && (() => {
         const abuse = data.abuse;
+        const abuseEnabled = data.abuseEnabled;
         const score = abuse?.abuseConfidenceScore ?? null;
         const isMalawi = data.countryCode === "MW";
         const scoreColor = score === null ? "text-slate-400"
@@ -133,7 +135,7 @@ function IpLookup({ token }: { token: string }) {
         return (
           <div className="space-y-3">
             {/* ── AbuseIPDB Threat Card ── */}
-            {abuse !== undefined && (
+            {abuseEnabled !== undefined && (
               <div className={`rounded-xl border p-4 ${scoreBg}`}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -149,35 +151,41 @@ function IpLookup({ token }: { token: string }) {
                     {scoreLabel}
                   </span>
                 </div>
-                {abuse ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="text-center">
-                      <div className={`text-3xl font-black font-mono ${scoreColor}`}>{score}%</div>
-                      <div className="text-[9px] text-slate-500 uppercase tracking-wide mt-0.5">Abuse Score</div>
-                      {/* Score bar */}
-                      <div className="mt-1.5 h-1.5 rounded-full bg-white/5 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${score >= 50 ? "bg-red-500" : score >= 20 ? "bg-orange-500" : "bg-green-500"}`}
-                          style={{ width: `${score}%` }}
-                        />
+                {abuseEnabled ? (
+                  abuse ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="text-center">
+                        <div className={`text-3xl font-black font-mono ${scoreColor}`}>{score}%</div>
+                        <div className="text-[9px] text-slate-500 uppercase tracking-wide mt-0.5">Abuse Score</div>
+                        {/* Score bar */}
+                        <div className="mt-1.5 h-1.5 rounded-full bg-white/5 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${score >= 50 ? "bg-red-500" : score >= 20 ? "bg-orange-500" : "bg-green-500"}`}
+                            style={{ width: `${score}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-3xl font-black font-mono text-orange-400">{abuse.totalReports ?? 0}</div>
+                        <div className="text-[9px] text-slate-500 uppercase tracking-wide mt-0.5">Total Reports</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-sm font-bold font-mono text-slate-300">{abuse.domain || "—"}</div>
+                        <div className="text-[9px] text-slate-500 uppercase tracking-wide mt-0.5">ISP Domain</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-sm font-bold font-mono text-slate-300">{abuse.usageType || "—"}</div>
+                        <div className="text-[9px] text-slate-500 uppercase tracking-wide mt-0.5">Usage Type</div>
+                        {abuse.lastReportedAt && (
+                          <div className="text-[8px] text-slate-600 mt-1">Last: {new Date(abuse.lastReportedAt).toLocaleDateString()}</div>
+                        )}
                       </div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-3xl font-black font-mono text-orange-400">{abuse.totalReports ?? 0}</div>
-                      <div className="text-[9px] text-slate-500 uppercase tracking-wide mt-0.5">Total Reports</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-sm font-bold font-mono text-slate-300">{abuse.domain || "—"}</div>
-                      <div className="text-[9px] text-slate-500 uppercase tracking-wide mt-0.5">ISP Domain</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-sm font-bold font-mono text-slate-300">{abuse.usageType || "—"}</div>
-                      <div className="text-[9px] text-slate-500 uppercase tracking-wide mt-0.5">Usage Type</div>
-                      {abuse.lastReportedAt && (
-                        <div className="text-[8px] text-slate-600 mt-1">Last: {new Date(abuse.lastReportedAt).toLocaleDateString()}</div>
-                      )}
-                    </div>
-                  </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 font-mono">
+                      ✓ Threat lookup enabled. Indicator query returned no reports (or API limit exceeded).
+                    </p>
+                  )
                 ) : (
                   <p className="text-[11px] text-slate-500 font-mono">
                     Add <code className="text-[#FFD600] bg-[#FFD600]/10 px-1 rounded">ABUSEIPDB_API_KEY</code> to .env.local to enable threat scoring
@@ -755,6 +763,569 @@ Authentication-Results: mx1.macra.mw; spf=fail smtp.mailfrom=macra-mw.ru`;
   );
 }
 
+// ── Malware Analyzer Component ────────────────────────────────────────────────
+function MalwareAnalyzer({ token }: { token: string }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const run = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) return;
+    setLoading(true); setError(""); setData(null);
+
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload  = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const res = await cyberFetch(token, "/malware/analyze", {
+        method: "POST",
+        body: JSON.stringify({
+          fileName: file.name,
+          fileData: base64,
+        }),
+      });
+
+      setData(res);
+    } catch (e: any) {
+      setError(e.message || "Failed to analyze malware sample.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const riskColor = (score: number) =>
+    score >= 80 ? "text-red-500" :
+    score >= 60 ? "text-orange-500" :
+    score >= 30 ? "text-yellow-500" :
+    score >= 10 ? "text-blue-500" :
+    "text-green-500";
+
+  return (
+    <div className="space-y-4">
+      <div className="text-[11px] font-mono text-slate-500">
+        Upload a file sample (MZ PE, ELF, macro Office, scripts, zip) for sandboxed static signature and reputational analysis.
+      </div>
+      
+      <form onSubmit={run} className="space-y-4 font-mono">
+        <div
+          onClick={() => fileInputRef.current?.click()}
+          className={`border border-dashed rounded-xl p-6 text-center cursor-pointer transition ${
+            file ? "border-green-500/50 bg-green-500/5" : "border-white/10 hover:border-green-500/30"
+          }`}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            onChange={e => setFile(e.target.files?.[0] || null)}
+          />
+          {file ? (
+            <div className="space-y-1">
+              <FileSearch className="w-8 h-8 mx-auto text-green-400 mb-2" />
+              <p className="text-xs font-bold text-white">{file.name}</p>
+              <p className="text-[10px] text-slate-500">{(file.size / 1024).toFixed(1)} KB</p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <Upload className="w-8 h-8 mx-auto text-slate-600 mb-2" />
+              <p className="text-xs text-slate-500">Click to select sample file</p>
+              <p className="text-[9px] text-slate-700">MZ PE, ELF, PDF, DOCX, ZIP</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={!file || loading}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-bold bg-green-500/20 border border-green-500/40 text-green-300 hover:bg-green-500/30 transition disabled:opacity-50"
+          >
+            {loading ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing file binary...</>
+            ) : (
+              <><Shield className="w-4 h-4" /> Run Deep Malware Scan</>
+            )}
+          </button>
+          {file && (
+            <button
+              type="button"
+              onClick={() => { setFile(null); setData(null); setError(""); }}
+              className="px-4 py-2.5 rounded-lg border border-white/10 text-slate-400 hover:text-slate-200 text-xs transition"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </form>
+
+      {error && (
+        <div className="p-3 rounded-lg border border-red-500/20 bg-red-500/5 text-red-400 text-xs font-mono">
+          ⚠ {error}
+        </div>
+      )}
+
+      {data && (
+        <div className="space-y-4 border border-white/5 bg-white/2 rounded-xl p-4">
+          <div className="flex items-center justify-between border-b border-white/5 pb-3">
+            <div>
+              <span className="text-[10px] font-mono text-slate-500 uppercase">Analysis Complete</span>
+              <h4 className="text-xs font-bold text-white font-mono mt-0.5">{file?.name}</h4>
+            </div>
+            <div className="text-right">
+              <div className={`text-lg font-black font-mono ${riskColor(data.riskScore)}`}>
+                {data.riskScore}/100
+              </div>
+              <div className="text-[8px] text-slate-500 uppercase tracking-wider font-mono">Risk Score ({data.riskLevel})</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <div className="text-[9px] font-mono text-slate-500 uppercase tracking-wide">Static File Metadata</div>
+              <div className="space-y-1 text-[11px] font-mono">
+                <div className="flex justify-between p-1.5 rounded bg-white/2">
+                  <span className="text-slate-500">File Type:</span>
+                  <span className="text-slate-300 font-semibold">{data.fileType}</span>
+                </div>
+                <div className="flex justify-between p-1.5 rounded bg-white/2">
+                  <span className="text-slate-500">MD5 Hash:</span>
+                  <span className="text-slate-300 font-semibold truncate max-w-[200px]" title={data.md5}>{data.md5 || "—"}</span>
+                </div>
+                <div className="flex justify-between p-1.5 rounded bg-white/2">
+                  <span className="text-slate-500">SHA256:</span>
+                  <span className="text-slate-300 font-semibold truncate max-w-[200px]" title={data.sha256}>{data.sha256}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-[9px] font-mono text-slate-500 uppercase tracking-wide">Signature & Reputation Analysis</div>
+              <div className="space-y-1 text-[11px] font-mono">
+                <div className="flex justify-between p-1.5 rounded bg-white/2">
+                  <span className="text-slate-500">VirusTotal:</span>
+                  <span className="text-slate-300 font-semibold">
+                    {data.vtDetections !== null ? `${data.vtDetections}/${data.vtTotal} engines` : "No key configured"}
+                  </span>
+                </div>
+                <div className="flex justify-between p-1.5 rounded bg-white/2">
+                  <span className="text-slate-500">MalwareBazaar:</span>
+                  <span className="text-slate-300 font-semibold">
+                    {data.mbFound ? `Found (${data.mbTags.join(", ")})` : "Not listed"}
+                  </span>
+                </div>
+                <div className="flex justify-between p-1.5 rounded bg-white/2">
+                  <span className="text-slate-500">YARA Match:</span>
+                  <span className="text-slate-300 font-semibold">
+                    {data.yaraMatches.length > 0 ? data.yaraMatches.join(", ") : "Clean"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {data.iocExtracted && (
+            <div className="space-y-2 pt-2 border-t border-white/5">
+              <div className="text-[9px] font-mono text-slate-500 uppercase tracking-wide">Extracted Indicators of Compromise (IOCs)</div>
+              <div className="responsive-2col font-mono">
+                <div className="p-2 rounded bg-[#05080F] border border-white/5">
+                  <div className="text-[8px] text-slate-500 font-bold uppercase mb-1">IP Addresses ({data.iocExtracted.ips.length})</div>
+                  <div className="text-[10px] text-slate-300">
+                    {data.iocExtracted.ips.length > 0 ? data.iocExtracted.ips.join(", ") : "None"}
+                  </div>
+                </div>
+                <div className="p-2 rounded bg-[#05080F] border border-white/5">
+                  <div className="text-[8px] text-slate-500 font-bold uppercase mb-1">Domains ({data.iocExtracted.domains.length})</div>
+                  <div className="text-[10px] text-slate-300">
+                    {data.iocExtracted.domains.length > 0 ? data.iocExtracted.domains.join(", ") : "None"}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="p-2.5 rounded bg-green-500/5 border border-green-500/10 text-slate-300 text-[11px] font-mono">
+            <strong>Engine Summary:</strong> {data.summary}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Vulnerability Database Component ──────────────────────────────────────────
+function VulnerabilityDb({ token }: { token: string }) {
+  const [vulns, setVulns] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [showIngest, setShowIngest] = useState(false);
+
+  const [cveId, setCveId] = useState("CVE-2026-");
+  const [title, setTitle] = useState("");
+  const [desc, setDesc] = useState("");
+  const [reremediation, setReremediation] = useState("");
+  const [assets, setAssets] = useState("");
+  const [cvssScore, setCvssScore] = useState<number>(0);
+
+  const [av, setAv] = useState<"N"|"A"|"L"|"P">("N");
+  const [ac, setAc] = useState<"L"|"H">("L");
+  const [pr, setPr] = useState<"N"|"L"|"H">("N");
+  const [ui, setUi] = useState<"N"|"R">("N");
+  const [s, setS] = useState<"U"|"C">("U");
+  const [c, setC] = useState<"N"|"L"|"H">("H");
+  const [i, setI] = useState<"N"|"L"|"H">("H");
+  const [a, setA] = useState<"N"|"L"|"H">("H");
+
+  const [ingesting, setIngesting] = useState(false);
+
+  const [patchingId, setPatchingId] = useState<string | null>(null);
+  const [patchStatus, setPatchStatus] = useState("Remediated");
+  const [patchRemediation, setPatchRemediation] = useState("");
+  const [patching, setPatching] = useState(false);
+
+  const fetchVulns = useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const data = await cyberFetch(token, "/vulnerabilities");
+      setVulns(data);
+    } catch (e: any) {
+      setError(e.message || "Failed to load vulnerabilities.");
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    fetchVulns();
+  }, [fetchVulns]);
+
+  const runCalculator = () => {
+    const AV_val = { N: 0.85, A: 0.62, L: 0.55, P: 0.20 }[av];
+    const AC_val = { L: 0.77, H: 0.44 }[ac];
+    
+    let PR_val = 0.85;
+    if (pr === "L") PR_val = s === "C" ? 0.68 : 0.62;
+    else if (pr === "H") PR_val = s === "C" ? 0.50 : 0.27;
+
+    const UI_val = { N: 0.85, R: 0.62 }[ui];
+    const Exploitability = 8.22 * AV_val * AC_val * PR_val * UI_val;
+
+    const C_val = { N: 0, L: 0.22, H: 0.56 }[c];
+    const I_val = { N: 0, L: 0.22, H: 0.56 }[i];
+    const A_val = { N: 0, L: 0.22, H: 0.56 }[a];
+    const ISS = 1 - (1 - C_val) * (1 - I_val) * (1 - A_val);
+
+    let Impact = 0;
+    if (s === "U") {
+      Impact = 6.42 * ISS;
+    } else {
+      Impact = 7.52 * (ISS - 0.029) - 3.25 * Math.pow(ISS - 0.02, 15);
+    }
+
+    if (Impact <= 0) {
+      setCvssScore(0);
+      return;
+    }
+
+    let base = 0;
+    if (s === "U") {
+      base = Math.min(Impact + Exploitability, 10);
+    } else {
+      base = Math.min(1.08 * (Impact + Exploitability), 10);
+    }
+    setCvssScore(Math.round(base * 10) / 10);
+  };
+
+  const handleIngest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cveId || !title || !desc) return;
+    setIngesting(true); setError("");
+
+    try {
+      const assetList = assets.split(",").map(a => a.trim()).filter(Boolean);
+      await cyberFetch(token, "/vulnerabilities/ingest", {
+        method: "POST",
+        body: JSON.stringify({
+          cveId: cveId.trim(),
+          title,
+          description: desc,
+          cvssScore,
+          remediation: reremediation,
+          affectedAssets: assetList,
+        }),
+      });
+
+      setCveId("CVE-2026-"); setTitle(""); setDesc(""); setReremediation(""); setAssets(""); setCvssScore(0);
+      setShowIngest(false);
+      fetchVulns();
+    } catch (e: any) {
+      setError(e.message || "Failed to ingest vulnerability.");
+    } finally {
+      setIngesting(false);
+    }
+  };
+
+  const handlePatchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!patchingId) return;
+    setPatching(true); setError("");
+
+    try {
+      await cyberFetch(token, `/vulnerabilities/${patchingId}/patch`, {
+        method: "POST",
+        body: JSON.stringify({
+          status: patchStatus,
+          remediation: patchRemediation,
+        }),
+      });
+
+      setPatchingId(null); setPatchRemediation("");
+      fetchVulns();
+    } catch (e: any) {
+      setError(e.message || "Failed to patch vulnerability.");
+    } finally {
+      setPatching(false);
+    }
+  };
+
+  const badgeColor = (sev: string) =>
+    sev === "Critical" ? "text-red-400 border-red-500/20 bg-red-500/10" :
+    sev === "High" ? "text-orange-400 border-orange-500/20 bg-orange-500/10" :
+    sev === "Medium" ? "text-yellow-400 border-yellow-500/20 bg-yellow-500/10" :
+    "text-blue-400 border-blue-500/20 bg-blue-500/10";
+
+  return (
+    <div className="space-y-4 font-mono text-[11px]">
+      <div className="flex items-center justify-between border-b border-white/5 pb-3">
+        <div className="text-[11px] text-slate-500">Vulnerability Ingestion, CVSS calculator, and patch management.</div>
+        <button
+          onClick={() => setShowIngest(!showIngest)}
+          className="px-3 py-1 rounded border border-cyan-500/30 text-cyan-400 text-[10px] hover:bg-cyan-500/10 transition font-mono"
+        >
+          {showIngest ? "View Ingested" : "Report new CVE"}
+        </button>
+      </div>
+
+      {showIngest ? (
+        <form onSubmit={handleIngest} className="space-y-4 bg-white/2 p-4 rounded-xl border border-white/5 text-[11px] font-mono">
+          <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Ingest New Security Advisory</h4>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-500 mb-1">CVE ID</label>
+              <input value={cveId} onChange={e => setCveId(e.target.value)} required
+                className="w-full glass-input px-2.5 py-1.5 text-white" />
+            </div>
+            <div>
+              <label className="block text-slate-500 mb-1">Advisory Title</label>
+              <input value={title} onChange={e => setTitle(e.target.value)} required
+                className="w-full glass-input px-2.5 py-1.5 text-white" />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-slate-500 mb-1">Description</label>
+            <textarea value={desc} onChange={e => setDesc(e.target.value)} required rows={3}
+              className="w-full glass-input px-2.5 py-1.5 text-white resize-none" />
+          </div>
+
+          <div className="bg-black/30 border border-white/5 rounded-xl p-3 space-y-3">
+            <div className="flex justify-between items-center border-b border-white/5 pb-2">
+              <span className="text-xs font-bold text-slate-300">CVSS v3.1 Vector Calculator</span>
+              <span className={`text-xs font-black ${cvssScore >= 7.0 ? "text-red-400" : "text-yellow-400"}`}>
+                Calculated Score: {cvssScore}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-[10px]">
+              <div>
+                <label className="block text-slate-500 mb-1">Attack Vector</label>
+                <select value={av} onChange={e => setAv(e.target.value as any)} className="w-full glass-input px-2 py-1 bg-[#0A0E1A]">
+                  <option value="N">Network (N)</option>
+                  <option value="A">Adjacent (A)</option>
+                  <option value="L">Local (L)</option>
+                  <option value="P">Physical (P)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-500 mb-1">Complexity</label>
+                <select value={ac} onChange={e => setAc(e.target.value as any)} className="w-full glass-input px-2 py-1 bg-[#0A0E1A]">
+                  <option value="L">Low (L)</option>
+                  <option value="H">High (H)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-500 mb-1">Privileges</label>
+                <select value={pr} onChange={e => setPr(e.target.value as any)} className="w-full glass-input px-2 py-1 bg-[#0A0E1A]">
+                  <option value="N">None (N)</option>
+                  <option value="L">Low (L)</option>
+                  <option value="H">High (H)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-500 mb-1">User Interaction</label>
+                <select value={ui} onChange={e => setUi(e.target.value as any)} className="w-full glass-input px-2 py-1 bg-[#0A0E1A]">
+                  <option value="N">None (N)</option>
+                  <option value="R">Required (R)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-[10px]">
+              <div>
+                <label className="block text-slate-500 mb-1">Scope</label>
+                <select value={s} onChange={e => setS(e.target.value as any)} className="w-full glass-input px-2 py-1 bg-[#0A0E1A]">
+                  <option value="U">Unchanged (U)</option>
+                  <option value="C">Changed (C)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-500 mb-1">Confidentiality</label>
+                <select value={c} onChange={e => setC(e.target.value as any)} className="w-full glass-input px-2 py-1 bg-[#0A0E1A]">
+                  <option value="H">High (H)</option>
+                  <option value="L">Low (L)</option>
+                  <option value="N">None (N)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-500 mb-1">Integrity</label>
+                <select value={i} onChange={e => setI(e.target.value as any)} className="w-full glass-input px-2 py-1 bg-[#0A0E1A]">
+                  <option value="H">High (H)</option>
+                  <option value="L">Low (L)</option>
+                  <option value="N">None (N)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-500 mb-1">Availability</label>
+                <select value={a} onChange={e => setA(e.target.value as any)} className="w-full glass-input px-2 py-1 bg-[#0A0E1A]">
+                  <option value="H">High (H)</option>
+                  <option value="L">Low (L)</option>
+                  <option value="N">None (N)</option>
+                </select>
+              </div>
+            </div>
+
+            <button type="button" onClick={runCalculator}
+              className="w-full py-1.5 rounded border border-cyan-500/20 text-cyan-400 font-bold hover:bg-cyan-500/5 text-[10px] transition">
+              Calculate base CVSS score
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-500 mb-1">Affected Assets (comma-separated)</label>
+              <input value={assets} onChange={e => setAssets(e.target.value)} placeholder="Web-Portal, DB-01"
+                className="w-full glass-input px-2.5 py-1.5 text-white" />
+            </div>
+            <div>
+              <label className="block text-slate-500 mb-1">Initial Remediation Advice</label>
+              <input value={reremediation} onChange={e => setReremediation(e.target.value)} placeholder="Upgrade component library immediately"
+                className="w-full glass-input px-2.5 py-1.5 text-white" />
+            </div>
+          </div>
+
+          <button type="submit" disabled={ingesting}
+            className="w-full py-2.5 bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-bold rounded-lg hover:bg-cyan-500/30 transition disabled:opacity-50 font-mono">
+            {ingesting ? "Ingesting..." : "Register CVE Advisory"}
+          </button>
+        </form>
+      ) : patchingId ? (
+        <form onSubmit={handlePatchSubmit} className="space-y-4 bg-white/2 p-4 rounded-xl border border-white/5 text-[11px] font-mono">
+          <h4 className="text-xs font-bold text-white uppercase mb-2">Remediate Vulnerability</h4>
+          <div>
+            <label className="block text-slate-500 mb-1">Remediation Status</label>
+            <select value={patchStatus} onChange={e => setPatchStatus(e.target.value)}
+              className="w-full glass-input px-2.5 py-1.5 bg-[#0A0E1A] text-white">
+              <option value="In Progress">In Progress</option>
+              <option value="Mitigated">Mitigated</option>
+              <option value="Remediated">Remediated</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-slate-500 mb-1">Remediation Actions Taken / Verification Notes</label>
+            <textarea value={patchRemediation} onChange={e => setPatchRemediation(e.target.value)} required rows={3}
+              placeholder="Verified update package installed and network ports closed."
+              className="w-full glass-input px-2.5 py-1.5 text-white resize-none" />
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" disabled={patching}
+              className="flex-1 py-2 bg-green-500/20 border border-green-500/40 text-green-300 font-bold rounded-lg hover:bg-green-500/30 transition disabled:opacity-50">
+              {patching ? "Saving..." : "Commit Patch"}
+            </button>
+            <button type="button" onClick={() => setPatchingId(null)}
+              className="px-4 py-2 border border-white/10 rounded-lg text-slate-400 hover:text-slate-200 transition">
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="space-y-3">
+          {loading ? (
+            <div className="text-center py-6 text-slate-500 text-xs">Loading vulnerabilities...</div>
+          ) : vulns.length === 0 ? (
+            <div className="text-center py-8 text-slate-600 text-xs">No vulnerabilities registered. Click "Report new CVE" above.</div>
+          ) : (
+            <div className="space-y-2">
+              {vulns.map(v => (
+                <div key={v.id} className="p-3 bg-white/2 border border-white/5 rounded-xl space-y-2 text-[11px] font-mono">
+                  <div className="flex justify-between items-start gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${badgeColor(v.severity)}`}>
+                        {v.cve_id} ({v.severity} · {v.cvss_score})
+                      </span>
+                      <h4 className="font-bold text-white text-xs">{v.title}</h4>
+                    </div>
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                      v.status === "Remediated" ? "bg-green-500/10 text-green-400 border border-green-500/25" :
+                      v.status === "Mitigated" ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/25" :
+                      v.status === "In Progress" ? "bg-yellow-500/10 text-yellow-400 border border-yellow-500/25" :
+                      "bg-red-500/10 text-red-400 border border-red-500/25"
+                    }`}>
+                      {v.status.toUpperCase()}
+                    </span>
+                  </div>
+
+                  <p className="text-slate-400 text-xs">{v.description}</p>
+                  
+                  {v.affected_assets?.length > 0 && (
+                    <div className="text-[10px] text-slate-500">
+                      <strong>Affected Assets:</strong> {v.affected_assets.join(", ")}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/5 flex-wrap">
+                    <span className="text-[9px] text-slate-600">Detected: {new Date(v.detected_at).toLocaleString()}</span>
+                    {v.status !== "Remediated" && (
+                      <button
+                        onClick={() => { setPatchingId(v.id); setPatchStatus(v.status === "Open" ? "In Progress" : v.status); }}
+                        className="px-2 py-0.5 rounded border border-green-500/30 text-green-400 text-[9px] hover:bg-green-500/10 transition font-mono"
+                      >
+                        Patch
+                      </button>
+                    )}
+                  </div>
+
+                  {v.remediation && (
+                    <div className="p-2 rounded bg-black/20 border border-white/5 text-slate-400 text-[10px]">
+                      <strong>Remediation Advice:</strong> {v.remediation}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function CyberIntelligence({ token }: Props) {
   const [tab, setTab] = useState<ToolTab>("osint");
@@ -768,7 +1339,7 @@ export default function CyberIntelligence({ token }: Props) {
     { id: "forensics",icon: Fingerprint,  label: "Digital Forensics",desc: "Hash · Logs · Email", color: "text-green-400" },
   ];
 
-  const [forensicsTool, setForensicsTool] = useState<"hash" | "logs" | "email">("hash");
+  const [forensicsTool, setForensicsTool] = useState<"hash" | "logs" | "email" | "malware" | "vulnerabilities">("hash");
 
   return (
     <div className="space-y-6">
@@ -871,10 +1442,10 @@ export default function CyberIntelligence({ token }: Props) {
             <Fingerprint className="w-4 h-4 text-green-400" />
             <span className="font-orbitron text-xs font-bold text-green-400">DIGITAL FORENSICS</span>
             <div className="flex gap-1.5 ml-auto flex-wrap justify-end">
-              {(["hash","logs","email"] as const).map(t => (
+              {(["hash","logs","email","malware","vulnerabilities"] as const).map(t => (
                 <button key={t} onClick={() => setForensicsTool(t)}
                   className={`text-[10px] font-mono px-2.5 py-1 rounded-full border transition ${forensicsTool === t ? "border-green-500/50 bg-green-500/10 text-green-400" : "border-white/10 text-slate-500 hover:text-slate-300"}`}>
-                  {t === "hash" ? "HASH CALC" : t === "logs" ? "LOG PARSER" : "EMAIL HEADERS"}
+                  {t === "hash" ? "HASH CALC" : t === "logs" ? "LOG PARSER" : t === "email" ? "EMAIL HEADERS" : t === "malware" ? "MALWARE SCAN" : "VULNERABILITIES"}
                 </button>
               ))}
             </div>
@@ -882,6 +1453,8 @@ export default function CyberIntelligence({ token }: Props) {
           {forensicsTool === "hash"  && <HashCalc token={token} />}
           {forensicsTool === "logs"  && <LogParser />}
           {forensicsTool === "email" && <EmailHeaderAnalyzer />}
+          {forensicsTool === "malware" && <MalwareAnalyzer token={token} />}
+          {forensicsTool === "vulnerabilities" && <VulnerabilityDb token={token} />}
         </div>
       )}
 

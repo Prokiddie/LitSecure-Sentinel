@@ -1,0 +1,107 @@
+name: LitSecure — DevSecOps Pipeline
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  static-analysis:
+    name: 🛡️ SAST & Dependency Scans
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Build (Verify Compilation)
+        run: npm run build
+
+      - name: Run Unit & Integration Tests
+        run: npm run test -- --run
+
+      - name: ⚙️ Semgrep SAST Scan
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: p/javascript p/owasp-top-ten
+        continue-on-error: true
+
+      - name: 🔍 Snyk Dependency Audit
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+        continue-on-error: true
+
+  container-security:
+    name: 🐳 Container Security & Trivy Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build Sentinel Docker Image
+        run: docker build -t litsecure-sentinel:latest .
+
+      - name: 🛡️ Trivy Container Vulnerability Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: litsecure-sentinel:latest
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+
+      - name: Upload Trivy Results to GitHub Security Tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+  dast-api-scan:
+    name: 📡 DAST API Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install Production Dependencies
+        run: npm ci
+
+      - name: Start LitSecure Sentinel Server in Background
+        run: |
+          npm run build
+          NODE_ENV=production PORT=3000 npm run start &
+          echo "Waiting for server to start..."
+          sleep 5
+          curl -s http://localhost:3000/api/health/live || exit 1
+        env:
+          JWT_SECRET: devsecops-dast-jwt-test-secret-key-32chars-min
+          REFRESH_TOKEN_SECRET: devsecops-dast-refresh-test-secret-key-32chars-min
+
+      - name: ⚡ OWASP ZAP Baseline API Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: 'http://localhost:3000/'
+          cmd_options: '-a'
+        continue-on-error: true

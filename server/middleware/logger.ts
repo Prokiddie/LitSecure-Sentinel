@@ -72,6 +72,11 @@ const logger = {
 
 export default logger;
 
+let globalRequestCount = 0;
+export function getRequestCount(): number {
+  return globalRequestCount;
+}
+
 // ─── HTTP Request Logger Middleware ──────────────────────────────────────────
 /**
  * Attaches a unique request ID to each request and logs:
@@ -79,6 +84,7 @@ export default logger;
  *  - On finish:  status code, latency in ms
  */
 export function requestLogger(req: Request, res: Response, next: NextFunction): void {
+  globalRequestCount++;
   // Attach request ID for log correlation
   const requestId = (req.headers["x-request-id"] as string) || crypto.randomUUID();
   (req as any).requestId = requestId;

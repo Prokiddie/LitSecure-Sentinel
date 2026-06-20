@@ -12,7 +12,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { db, queries, generateId } from "../db/index.js";
 import { getUserFromSupabase, isSupabaseEnabled } from "../db/supabase-client.js";
-import { signAccessToken, verifyAccessToken, hashToken } from "../services/tokenService.js";
+import { signAccessToken, verifyAccessToken, signRefreshToken, verifyRefreshToken, hashToken } from "../services/tokenService.js";
 import { verifyMfaToken, isMfaEnabled } from "../services/mfa.js";
 import { validate } from "../middleware/validate.js";
 import { authLimiter } from "../middleware/rateLimiter.js";
@@ -154,9 +154,24 @@ router.post("/login", authLimiter, validate(loginSchema), async (req, res) => {
     name:   user.full_name,
     role:   user.role,
   });
+  const refreshToken = signRefreshToken({ userId: user.id });
+  const refreshHash  = hashToken(refreshToken);
+
+  // Store refresh token in database
+  db.prepare(`
+    INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
+    generateId("rt"),
+    user.id,
+    refreshHash,
+    new Date(Date.now() + 7 * 24 * 3600_000).toISOString(),
+    new Date().toISOString()
+  );
 
   return res.json({
     token,
+    refreshToken,
     mfa_enabled: !!user.mfa_enabled,
     user: {
       id:          user.id,
@@ -232,13 +247,100 @@ router.post("/register", authLimiter, (req, res) => {
   }
 
   const token = signAccessToken({ userId: id, id, email: email.toLowerCase().trim(), name: name.trim(), role: "citizen" });
+  const refreshToken = signRefreshToken({ userId: id });
+  const refreshHash  = hashToken(refreshToken);
+
+  // Store refresh token in database
+  db.prepare(`
+    INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
+    generateId("rt"),
+    id,
+    refreshHash,
+    new Date(Date.now() + 7 * 24 * 3600_000).toISOString(),
+    new Date().toISOString()
+  );
 
   return res.status(201).json({
     success: true,
     message: "Account created successfully. Welcome to LitSecure Sentinel.",
     token,
+    refreshToken,
     user: { id, email: email.toLowerCase().trim(), name: name.trim(), role: "citizen", phone: phone || "" },
   });
+});
+
+// ─── POST /api/auth/refresh ───────────────────────────────────────────────────
+router.post("/refresh", async (req, res) => {
+  const { refreshToken } = req.body;
+  if (!refreshToken) {
+    return res.status(400).json({ error: "REFRESH_TOKEN_REQUIRED", message: "Refresh token is required." });
+  }
+
+  try {
+    const payload = verifyRefreshToken(refreshToken);
+    const userId = payload.userId;
+    const tokenHash = hashToken(refreshToken);
+
+    // Look up token in DB
+    const existing = db.prepare("SELECT * FROM refresh_tokens WHERE token_hash = ?").get(tokenHash) as any;
+
+    if (!existing) {
+      // Re-use detection: valid signature but token not in database = reuse attempt!
+      // Invalidate all sessions for this user for security
+      db.prepare("DELETE FROM refresh_tokens WHERE user_id = ?").run(userId);
+      return res.status(401).json({
+        error: "TOKEN_REUSED",
+        message: "Security alert: Refresh token has already been used. All sessions revoked."
+      });
+    }
+
+    // Check expiration
+    if (new Date(existing.expires_at).getTime() < Date.now()) {
+      db.prepare("DELETE FROM refresh_tokens WHERE token_hash = ?").run(tokenHash);
+      return res.status(401).json({ error: "REFRESH_TOKEN_EXPIRED", message: "Refresh token expired. Please log in again." });
+    }
+
+    // Fetch user
+    const user = db.prepare("SELECT * FROM users WHERE id = ? AND is_active = 1").get(userId) as any;
+    if (!user) {
+      return res.status(401).json({ error: "USER_NOT_FOUND", message: "User not found or inactive." });
+    }
+
+    // Rotate refresh token
+    const newAccessToken = signAccessToken({
+      userId: user.id,
+      id:     user.id,
+      email:  user.email,
+      name:   user.full_name,
+      role:   user.role,
+    });
+    const newRefreshToken = signRefreshToken({ userId: user.id });
+    const newRefreshHash  = hashToken(newRefreshToken);
+
+    // Transactional rotation: delete old, insert new
+    db.transaction(() => {
+      db.prepare("DELETE FROM refresh_tokens WHERE token_hash = ?").run(tokenHash);
+      db.prepare(`
+        INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(
+        generateId("rt"),
+        user.id,
+        newRefreshHash,
+        new Date(Date.now() + 7 * 24 * 3600_000).toISOString(),
+        new Date().toISOString()
+      );
+    })();
+
+    return res.json({
+      token: newAccessToken,
+      refreshToken: newRefreshToken,
+    });
+  } catch (err: any) {
+    return res.status(401).json({ error: "INVALID_REFRESH_TOKEN", message: "Invalid refresh token." });
+  }
 });
 
 // ─── GET /api/auth/me ─────────────────────────────────────────────────────────

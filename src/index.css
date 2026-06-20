@@ -429,9 +429,208 @@ select option:checked, select option:hover { background-color: #1e2740; color: #
   .lg\:col-span-4   { grid-column: span 1; }
 }
 
+/* ─── Terminal / SIEM Feed ───────────────────────────────────────────────── */
+.terminal-bg {
+  position: relative;
+  background: rgba(2, 4, 9, 0.96);
+  border: 1px solid rgba(0, 255, 65, 0.12);
+  border-radius: 12px;
+  overflow: hidden;
+  /* CRT scanline effect */
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 1px,
+    rgba(0, 255, 65, 0.012) 1px,
+    rgba(0, 255, 65, 0.012) 2px
+  );
+}
+.terminal-bg:hover { border-color: rgba(0, 255, 65, 0.2); }
+
+/* Animated scan-line sweep */
+@keyframes scan-sweep {
+  0%   { top: -8%; opacity: 0.6; }
+  100% { top: 108%; opacity: 0; }
+}
+.scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(0, 255, 65, 0.08),
+    transparent
+  );
+  animation: scan-sweep 5s linear infinite;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Cyber heading utility */
+.cyber-heading-sm {
+  font-family: "Orbitron", sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 /* ─── 4K SOC Display ─────────────────────────────────────────────────────── */
 @media (min-width: 2560px) {
   html { font-size: 16px; }
   .card { border-radius: 16px; }
   .tab-nav-scroll button { padding: 10px 16px; font-size: 13px; }
 }
+
+/* ─── Agency Color Tokens ─────────────────────────────────────────────────── */
+:root {
+  --agency-macra:   #a855f7;
+  --agency-police:  #f97316;
+  --agency-mod:     #ef4444;
+  --agency-macert:  #22c55e;
+  --agency-rbm:     #3b82f6;
+  --agency-mof:     #eab308;
+}
+
+/* ─── Diagonal Corner Ribbons ─────────────────────────────────────────────── */
+.ribbon-wrap { position: relative; overflow: hidden; }
+
+.ribbon-critical::before,
+.ribbon-active::before,
+.ribbon-monitoring::before,
+.ribbon-closed::before {
+  content: attr(data-ribbon);
+  position: absolute;
+  top: 10px;
+  left: -22px;
+  width: 80px;
+  padding: 2px 0;
+  text-align: center;
+  font-size: 7px;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transform: rotate(-45deg);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.ribbon-critical::before {
+  background: #ef4444;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(239,68,68,0.5);
+}
+.ribbon-active::before {
+  background: #f97316;
+  color: #000;
+  box-shadow: 0 2px 8px rgba(249,115,22,0.4);
+}
+.ribbon-monitoring::before {
+  background: #eab308;
+  color: #000;
+  box-shadow: 0 2px 8px rgba(234,179,8,0.35);
+}
+.ribbon-closed::before {
+  background: #22c55e;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(34,197,94,0.35);
+}
+
+/* ─── Tab Hover Submenu ───────────────────────────────────────────────────── */
+.tab-hover-group { position: relative; }
+
+.tab-submenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-6px);
+  min-width: 180px;
+  background: #05080F;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 6px 0;
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,214,0,0.05);
+}
+
+.tab-hover-group:hover .tab-submenu {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
+.tab-submenu::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: #05080F;
+  border-left: 1px solid rgba(255,255,255,0.1);
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+.tab-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  font-size: 10px;
+  font-family: "JetBrains Mono", monospace;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  white-space: nowrap;
+}
+.tab-submenu-item:hover {
+  background: rgba(255,255,255,0.04);
+  color: #FFD600;
+}
+.tab-submenu-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.06);
+  margin: 4px 0;
+}
+
+/* ─── Quick-Action Toolbar ────────────────────────────────────────────────── */
+.qa-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 9px;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+}
+.qa-pill:hover { filter: brightness(1.2); transform: translateY(-1px); }
+
+/* ─── Agency Filter Active Stripe ────────────────────────────────────────── */
+.agency-filter-stripe {
+  border-left: 3px solid var(--agency-active, transparent);
+  transition: border-color 0.3s ease;
+}
+
+/* ─── Case Management & Toast Animations ─────────────────────────────────── */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+.animate-fade-in { animation: fade-in 0.25s ease both; }
+
+/* ─── Case Management Dark-mode scrollbar ────────────────────────────────── */
+#case-management *::-webkit-scrollbar       { width: 4px; height: 4px; }
+#case-management *::-webkit-scrollbar-track { background: #0d1520; }
+#case-management *::-webkit-scrollbar-thumb { background: #1e2d42; border-radius: 4px; }
+#case-management *::-webkit-scrollbar-thumb:hover { background: #2a3d5a; }

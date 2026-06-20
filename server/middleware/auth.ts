@@ -52,8 +52,30 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+export const ROLE_LEVELS: Record<string, number> = {
+  citizen: 10,
+  org_user: 20,
+  org_admin: 30,
+  auditor: 35,
+  analyst: 40,
+  investigator: 50,
+  gov_admin: 60,
+  soc_manager: 70,
+  admin: 80,
+  super_admin: 90,
+};
+
 /**
- * Middleware: require one of the specified roles.
+ * Helper to check if a user role meets or exceeds a required role level.
+ */
+export function checkRolePermission(userRole: string, requiredRole: string): boolean {
+  const userLevel = ROLE_LEVELS[userRole] ?? 0;
+  const requiredLevel = ROLE_LEVELS[requiredRole] ?? 999;
+  return userLevel >= requiredLevel;
+}
+
+/**
+ * Middleware: require one of the specified roles or a higher role in the hierarchy.
  * Must be used AFTER requireAuth.
  */
 export function requireRole(...roles: string[]) {
@@ -61,10 +83,13 @@ export function requireRole(...roles: string[]) {
     if (!req.user) {
       return res.status(401).json({ error: "AUTH_REQUIRED", message: "Authentication required." });
     }
-    if (!roles.includes(req.user.role)) {
+    
+    const isAllowed = roles.some(role => checkRolePermission(req.user!.role, role));
+
+    if (!isAllowed && !roles.includes(req.user.role)) {
       return res.status(403).json({
         error: "FORBIDDEN",
-        message: `This action requires one of these roles: ${roles.join(", ")}. Your role: ${req.user.role}.`
+        message: `This action requires one of these roles: ${roles.join(", ")} (or higher). Your role: ${req.user.role}.`
       });
     }
     next();

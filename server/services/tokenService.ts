@@ -20,6 +20,16 @@ export function verifyAccessToken(token: string): TokenPayload {
   return jwt.verify(token, JWT_SECRET) as TokenPayload;
 }
 
+export function signRefreshToken(payload: { userId: string }): string {
+  const refreshSecret = process.env.REFRESH_SECRET || "dev-refresh-secret-CHANGE-IN-PRODUCTION-IMMEDIATELY";
+  return jwt.sign(payload, refreshSecret, { expiresIn: "7d" } as jwt.SignOptions);
+}
+
+export function verifyRefreshToken(token: string): { userId: string } {
+  const refreshSecret = process.env.REFRESH_SECRET || "dev-refresh-secret-CHANGE-IN-PRODUCTION-IMMEDIATELY";
+  return jwt.verify(token, refreshSecret) as { userId: string };
+}
+
 export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }

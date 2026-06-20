@@ -5,7 +5,7 @@ import {
   Building2, Zap, Wifi, GraduationCap, Hospital,
   TrendingUp, CheckCircle2, XCircle, RefreshCw, Radio,
   Bot, Loader2, Sparkles, Copy, ChevronDown,
-  MapPin, Users, Clock, ChevronRight, X,
+  MapPin, Users, Clock, ChevronRight, X, FileText,
   Crosshair, Siren, Phone, MessageSquare, Lock, ShieldAlert, Layers, Cpu, Eye, Info
 } from "lucide-react";
 import { Incident, NationalStats } from "../types";
@@ -148,15 +148,23 @@ function getDistrictRisk(id: string, incidents: Incident[]): number {
   return id === "zomba" ? 65 : id === "lilongwe" ? 55 : id === "blantyre" ? 50 : 15;
 }
 
-// ─── Priority badge helper ────────────────────────────────────────────────────
-function PriorityBadge({ score, level }: { score: number; level: string }) {
-  const color = score >= 80 ? "text-red-400 bg-red-500/15 border-red-500/30"
-    : score >= 60 ? "text-orange-400 bg-orange-500/15 border-orange-500/30"
-    : score >= 40 ? "text-amber-400 bg-amber-500/15 border-amber-500/30"
-    : "text-slate-400 bg-white/5 border-white/10";
+// ─── Priority badge helper ─────────────────────────────────────────────────────
+// Maps severity/score → P1 CRITICAL · P2 HIGH · P3 MEDIUM · P4 LOW
+function PriorityBadge({ score, level, severity }: { score: number; level: string; severity?: string }) {
+  // Derive effective score: use explicit score if > 0, else derive from severity
+  const eff = score > 0 ? score
+    : severity === "Critical" ? 92
+    : severity === "High"     ? 72
+    : severity === "Medium"   ? 45
+    : 20;
+  const { label, color } =
+    eff >= 80 ? { label: "P1 CRITICAL", color: "text-red-400 bg-red-500/15 border-red-500/30" } :
+    eff >= 60 ? { label: "P2 HIGH",     color: "text-orange-400 bg-orange-500/15 border-orange-500/30" } :
+    eff >= 40 ? { label: "P3 MEDIUM",   color: "text-amber-400 bg-amber-500/15 border-amber-500/30" } :
+               { label: "P4 LOW",       color: "text-slate-400 bg-white/5 border-white/10" };
   return (
     <span className={`text-[8px] font-bold font-mono px-1.5 py-0.5 rounded border ${color}`}>
-      P{score}
+      {label}
     </span>
   );
 }
@@ -239,7 +247,13 @@ function MalawiIncidentMap({
   onHotspotClick: (districtId: string, name: string) => void;
 }) {
   const [hovered, setHovered] = useState<string | null>(null);
-  const [mapTheme, setMapTheme] = useState<"cyber" | "geo">("cyber");
+  const [mapTheme, setMapTheme] = useState<"cyber" | "geo">(() => {
+    return (sessionStorage.getItem("sentinel_map_theme") as "cyber" | "geo") || "cyber";
+  });
+
+  useEffect(() => {
+    sessionStorage.setItem("sentinel_map_theme", mapTheme);
+  }, [mapTheme]);
 
   // Filter districts that have active incidents to render pulsing circles
   const districtsWithIncidents = useMemo(() => {
@@ -483,26 +497,102 @@ function BentoMissionMetrics({
   const critical = incidents.filter(i => i.severity === "Critical" && !["Resolved", "Contained", "Closed"].includes(i.status));
   const resolved = incidents.filter(i => ["Resolved", "Contained"].includes(i.status));
 
+  const metrics = [
+    {
+      id: "active",
+      label: "Active Incidents",
+      sub: "Non-resolved events",
+      val: active.length,
+      icon: AlertTriangle,
+      topBorder: "bg-orange-500",
+      textColor: "text-orange-400",
+      borderColor: "border-orange-500/25",
+      bg: active.length > 0 ? "bg-orange-500/6" : "bg-white/2",
+      glow: active.length > 0 ? "hover:shadow-[0_0_20px_rgba(249,115,22,0.15)]" : "",
+      pulse: active.length > 0,
+      blink: active.length > 2,
+    },
+    {
+      id: "critical",
+      label: "CRITICAL",
+      sub: "Immediate response required",
+      val: critical.length,
+      icon: Siren,
+      topBorder: "bg-red-500",
+      textColor: "text-red-400",
+      borderColor: critical.length > 0 ? "border-red-500/40" : "border-red-500/15",
+      bg: critical.length > 0 ? "bg-red-500/8" : "bg-white/2",
+      glow: critical.length > 0 ? "hover:shadow-[0_0_30px_rgba(239,68,68,0.2)]" : "",
+      pulse: critical.length > 0,
+      blink: critical.length > 0,
+    },
+    {
+      id: "resolved",
+      label: "Resolved",
+      sub: "Contained & closed",
+      val: resolved.length,
+      icon: CheckCircle2,
+      topBorder: "bg-emerald-500",
+      textColor: "text-emerald-400",
+      borderColor: "border-emerald-500/20",
+      bg: "bg-emerald-500/4",
+      glow: "hover:shadow-[0_0_16px_rgba(34,197,94,0.1)]",
+      pulse: false,
+      blink: false,
+    },
+    {
+      id: "units",
+      label: "Response Units",
+      sub: "MACERT · Police · MDF",
+      val: 3,
+      icon: Users,
+      topBorder: "bg-blue-500",
+      textColor: "text-blue-400",
+      borderColor: "border-blue-500/20",
+      bg: "bg-blue-500/4",
+      glow: "hover:shadow-[0_0_16px_rgba(59,130,246,0.1)]",
+      pulse: false,
+      blink: false,
+    },
+  ];
+
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      {[
-        { id: "active",   label: "Active Incidents",     val: active.length,   icon: AlertTriangle, color: "text-orange-400 border-orange-500/20 bg-orange-500/5",  pulse: active.length > 0 },
-        { id: "critical", label: "Critical Severity",    val: critical.length, icon: Siren,         color: "text-red-400 border-red-500/20 bg-red-500/5",            pulse: critical.length > 0 },
-        { id: "resolved", label: "Resolved / Contained", val: resolved.length, icon: CheckCircle2,  color: "text-emerald-400 border-emerald-500/20 bg-emerald-500/5", pulse: false },
-        { id: "units",    label: "Dispatched Units",     val: 3,               icon: Users,         color: "text-blue-400 border-blue-500/20 bg-blue-500/5",          pulse: false },
-      ].map(({ id, label, val, icon: Icon, color, pulse }) => (
-        <button 
-          key={label} 
+      {metrics.map(({ id, label, sub, val, icon: Icon, topBorder, textColor, borderColor, bg, glow, pulse, blink }) => (
+        <button
+          key={id}
           onClick={() => onMetricClick(id as any)}
-          className={`rounded-xl border p-4 flex items-center gap-3 text-left w-full cursor-pointer hover:border-white/20 transition-all duration-200 ${color}`}
+          className={`relative rounded-xl border overflow-hidden text-left w-full cursor-pointer transition-all duration-300 group ${borderColor} ${bg} ${glow}`}
         >
-          <div className={`p-2.5 rounded-lg ${color}`}>
-            <Icon className={`w-5 h-5 ${pulse ? "animate-pulse" : ""}`} />
+          {/* Top accent stripe */}
+          <div className={`h-0.5 w-full ${topBorder} ${blink ? "animate-pulse" : ""}`} />
+
+          <div className="p-4 flex items-start gap-3">
+            {/* Icon */}
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border ${borderColor} bg-black/20 mt-0.5`}>
+              <Icon className={`w-4.5 h-4.5 ${textColor} ${pulse ? "animate-pulse" : ""}`} />
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <div className="text-[9px] font-mono uppercase tracking-widest text-slate-500 mb-0.5">{label}</div>
+              <div className={`font-orbitron text-3xl font-bold leading-none mb-1 ${val > 0 && id !== "resolved" ? textColor : "text-slate-100"}`}>
+                {val}
+              </div>
+              <div className="text-[8px] font-mono text-slate-600 truncate">{sub}</div>
+            </div>
+
+            {/* Live indicator for active/critical */}
+            {blink && (
+              <div className="absolute top-3 right-3">
+                <span className={`w-1.5 h-1.5 rounded-full ${topBorder} animate-ping absolute`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${topBorder} relative block`} />
+              </div>
+            )}
           </div>
-          <div>
-            <div className="text-[9px] uppercase tracking-wider font-mono text-slate-500">{label}</div>
-            <div className="text-2xl font-bold font-mono text-slate-100">{val}</div>
-            <div className="text-[8px] font-mono text-slate-600 mt-0.5">CLICK FOR DETAILS</div>
+
+          {/* Hover arrow */}
+          <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+            <ChevronRight className={`w-3 h-3 ${textColor}`} />
           </div>
         </button>
       ))}
@@ -520,36 +610,45 @@ function SectorHealthDashboard({
   return (
     <div className="card p-5 space-y-3">
       <h3 className="font-grotesk font-bold text-sm text-white flex items-center gap-2 border-b border-white/5 pb-3">
-        <div className="w-1 h-4 bg-blue-400 rounded" />
-        Sector Health Dashboard
-        <span className="ml-auto text-[9px] font-mono text-slate-500">LIVE · CLICK SECTOR ROW FOR DETAILS</span>
+        <div className="w-1.5 h-4 bg-blue-400 rounded-full" />
+        <span className="cyber-heading-sm text-slate-200">Sector Health Matrix</span>
+        <span className="ml-auto text-[8px] font-mono text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded uppercase">Live · Click Row</span>
       </h3>
-      <div className="space-y-2.5">
+      <div className="space-y-1.5">
         {SECTOR_HEALTH.map(({ id, label, icon: Icon, baseHealth }) => {
-          const health = sectorHealthFromIncidents(baseHealth, incidents, id);
-          const colorClass = health >= 80 ? "bg-emerald-400" : health >= 50 ? "bg-orange-400" : "bg-red-500";
+          const health     = sectorHealthFromIncidents(baseHealth, incidents, id);
+          const barColor   = health >= 80 ? "bg-emerald-400" : health >= 50 ? "bg-orange-400" : "bg-red-500";
           const textColor  = health >= 80 ? "text-emerald-400" : health >= 50 ? "text-orange-400" : "text-red-400";
+          const borderLeft = health >= 80 ? "border-l-emerald-500/60" : health >= 50 ? "border-l-orange-500/60" : "border-l-red-500/70";
           const status     = health >= 80 ? "OPERATIONAL" : health >= 50 ? "DEGRADED" : "CRITICAL";
           return (
-            <button 
-              key={id} 
+            <button
+              key={id}
               onClick={() => onSectorClick(id, label, health)}
-              className="w-full flex items-center gap-3 text-left p-2 rounded-xl bg-white/2 hover:bg-white/5 border border-white/5 hover:border-white/10 transition cursor-pointer"
+              className={`w-full flex items-center gap-3 text-left p-2.5 rounded-lg border border-white/5 border-l-2 ${borderLeft} hover:bg-white/4 hover:border-white/10 transition-all cursor-pointer group relative overflow-hidden`}
             >
-              <div className="p-1.5 rounded bg-white/5 shrink-0">
-                <Icon className="w-3.5 h-3.5 text-slate-400" />
+              {/* Icon */}
+              <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
+                health < 50 ? "bg-red-500/10" : health < 80 ? "bg-orange-500/8" : "bg-white/4"
+              }`}>
+                <Icon className={`w-3.5 h-3.5 ${textColor}`} />
               </div>
-              <div className="flex-1">
-                <div className="flex justify-between mb-1 text-[10px] font-mono">
-                  <span className="text-slate-300 font-bold">{label}</span>
-                  <span className={textColor}>{health}% — {status}</span>
+
+              {/* Label + bar */}
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between mb-1.5 text-[10px] font-mono">
+                  <span className="text-slate-200 font-semibold">{label}</span>
+                  <span className={`font-bold ${textColor}`}>{health}%</span>
                 </div>
-                <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${colorClass} ${health < 50 ? "animate-pulse" : ""}`}
-                    style={{ width: `${health}%` }}
-                  />
+                <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${health}%` }} />
                 </div>
+              </div>
+              
+              {/* Status Indicator */}
+              <div className="flex items-center gap-1 text-[8px] font-mono shrink-0">
+                <span className={`w-1.5 h-1.5 rounded-full ${barColor}`} />
+                <span className={textColor}>{status}</span>
               </div>
             </button>
           );
@@ -559,43 +658,300 @@ function SectorHealthDashboard({
   );
 }
 
+const formatElapsed = (seconds: number) => {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return `${h > 0 ? h + ":" : ""}${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+};
+
 function EocWarRoom({
   districtName,
   incidents,
   onClose,
+  isConnected,
+  lastChatMsg,
+  sendChatMessage,
+  connectedCount,
 }: {
   districtName: string;
   incidents: Incident[];
   onClose: () => void;
+  isConnected: boolean;
+  lastChatMsg: any;
+  sendChatMessage: (text: string, sender?: string, org?: string) => void;
+  connectedCount: number;
 }) {
+  // Current user configuration
+  const userStr = sessionStorage.getItem("sentinel_user");
+  const currentUser = userStr ? JSON.parse(userStr) : { name: "SOC-Analyst", role: "analyst" };
+
+  // ── States ─────────────────────────────────────────────────────────────────
   const [checklist, setChecklist] = useState<ChecklistItem[]>(INITIAL_CHECKLIST.map(i => ({ ...i, done: false })));
   const [chatMsg, setChatMsg] = useState("");
   const [chatLog, setChatLog] = useState<ChatMessage[]>(EOC_CHAT_FEED);
-  const chatRef = useRef<HTMLDivElement>(null);
+  
+  // Tactical & Alert States
+  const [emergency, setEmergency] = useState(false);
+  const [callActive, setCallActive] = useState(false);
+  const [callTarget, setCallTarget] = useState("");
+  const [reportActive, setReportActive] = useState(false);
+  const [aiActive, setAiActive] = useState(false);
+  const [escalatedLevel, setEscalatedLevel] = useState("L1 - CRITICAL");
 
-  const toggle = (id: string) =>
+  // Real-time ticking operational clock
+  const [elapsedSeconds, setElapsedSeconds] = useState(2820); // 47 mins
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Interactive Responders Status
+  const [unitStatus, setUnitStatus] = useState([
+    { name: "MACERT-SOC", status: "online", action: "Responding", badge: "● Online" },
+    { name: "MPS Cybercrime", status: "online", action: "Tracking", badge: "● Online" },
+    { name: "MOD Cyber-Cell", status: "standby", action: "Alert", badge: "◐ Standby" },
+    { name: "RBM Financial", status: "critical", action: "Freeze", badge: "🔴 Alert" },
+    { name: "ZNBC Comms", status: "offline", action: "No Response", badge: "○ Offline" }
+  ]);
+
+  // Dynamic Timeline
+  const [timelineEvents, setTimelineEvents] = useState([
+    { id: "e1", time: "14:32:17", type: "urgent", label: "🚨 URGENT", msg: "New C2 beacon detected: 41.221.72.109", status: "pending", actionLabel: "Block Now" },
+    { id: "e2", time: "14:31:45", type: "critical", label: "⚡ CRITICAL", msg: "Encryption detected on Zomba Council servers", status: "pending", actionLabel: "Isolate" },
+    { id: "e3", time: "14:29:12", type: "action", label: "🛡️ ACTION", msg: "Isolating subnet 192.168.12.0/24", status: "completed", actionLabel: "" },
+    { id: "e4", time: "14:25:03", type: "intelligence", label: "🧠 AI", msg: "Gemini Triage: Matches LIT-2026-59719 pattern", status: "pending", actionLabel: "Link Cases" }
+  ]);
+
+  // Action Queue
+  const [actionQueue, setActionQueue] = useState([
+    { id: "q1", priority: "🔴 CRITICAL", msg: "Block C2 IP: 41.221.72.109", status: "pending", timer: "⏱️ 2 min", type: "execute" },
+    { id: "q2", priority: "🟠 HIGH", msg: "Notify Zomba Council IT Director", status: "pending", type: "call" },
+    { id: "q3", priority: "🟡 MEDIUM", msg: "Update Threat Intelligence Feed", status: "pending", type: "update" },
+    { id: "q4", priority: "⚪ LOW", msg: "Document incident report", status: "pending", type: "draft" }
+  ]);
+
+  // Live IOC List
+  const [iocs, setIocs] = useState([
+    { value: "41.221.72.109", type: "ip", confidence: 97, blocked: true, country: "MW", description: "Ransomware C2 Beaconing" },
+    { value: "mra-portal-portal-mw.online", type: "domain", confidence: 81, blocked: false, country: "IS", description: "MRA Phishing Gateway" },
+    { value: "102.167.3.2", type: "ip", confidence: 92, blocked: false, country: "ZA", description: "Brute-force SSH attacks" },
+    { value: "41.70.3.11", type: "ip", confidence: 68, blocked: false, country: "MW", description: "Settlement fraud API abuse" },
+    { value: "mra-tax-payment.info", type: "domain", confidence: 45, blocked: false, country: "US", description: "Simulated spearphishing landing" }
+  ]);
+
+  // Interactive MITRE TTPs
+  const [selectedTtp, setSelectedTtp] = useState<string | null>(null);
+
+  // Command Console state
+  const [consoleInput, setConsoleInput] = useState("");
+  const [consoleHistory, setConsoleHistory] = useState<{ text: string; type: "info" | "success" | "error" | "warning" | "input" }[]>([
+    { text: "LITSECURE SENTINEL SECURITY DAEMON v1.0", type: "success" },
+    { text: "RAM db initialized. Direct network edge blocking active.", type: "info" },
+    { text: "Type /help to query list of stealth commands.", type: "info" }
+  ]);
+
+  const chatRef = useRef<HTMLDivElement>(null);
+  const consoleEndRef = useRef<HTMLDivElement>(null);
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const t = setInterval(() => {
+      setElapsedSeconds(s => s + 1);
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Sync WebSocket messages
+  useEffect(() => {
+    if (lastChatMsg) {
+      setChatLog(prev => {
+        const exists = prev.some(m => m.msg === lastChatMsg.text && m.time === lastChatMsg.time && m.sender === lastChatMsg.sender);
+        if (exists) return prev;
+        return [...prev, {
+          sender: lastChatMsg.sender,
+          org: lastChatMsg.org,
+          msg: lastChatMsg.text,
+          time: lastChatMsg.time,
+          type: lastChatMsg.org.toLowerCase().includes("police") ? "police"
+              : lastChatMsg.org.toLowerCase().includes("macert") ? "macert"
+              : lastChatMsg.org.toLowerCase().includes("system") ? "system" : "soc"
+        }];
+      });
+      setTimeout(() => chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" }), 100);
+    }
+  }, [lastChatMsg]);
+
+  useEffect(() => {
+    consoleEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [consoleHistory]);
+
+  const toggleChecklist = (id: string) =>
     setChecklist(prev => prev.map(i => i.id === id ? { ...i, done: !i.done } : i));
+
+  const toggleUnitStatus = (index: number) => {
+    setUnitStatus(prev => prev.map((u, i) => {
+      if (i !== index) return u;
+      const nextStatus = u.status === "online" ? "standby"
+                       : u.status === "standby" ? "critical"
+                       : u.status === "critical" ? "offline" : "online";
+      const nextBadge = nextStatus === "online" ? "● Online"
+                      : nextStatus === "standby" ? "◐ Standby"
+                      : nextStatus === "critical" ? "🔴 Alert" : "○ Offline";
+      const nextAction = nextStatus === "online" ? "Responding"
+                       : nextStatus === "standby" ? "Alert"
+                       : nextStatus === "critical" ? "Freeze" : "No Response";
+      return { ...u, status: nextStatus, badge: nextBadge, action: nextAction };
+    }));
+  };
 
   const sendChat = () => {
     if (!chatMsg.trim()) return;
-    setChatLog(prev => [...prev, {
-      sender: "SOC-Analyst",
-      org: "LitSecure SOC",
-      msg: chatMsg.trim(),
-      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      type: "soc",
-    }]);
+    const sender = currentUser.name;
+    const org = currentUser.role === "admin" || currentUser.role === "super_admin" ? "MACERT"
+              : currentUser.role === "soc_manager" ? "LitSecure SOC"
+              : currentUser.role === "investigator" ? "MPS Cybercrime" : "LitSecure SOC";
+    sendChatMessage(chatMsg.trim(), sender, org);
     setChatMsg("");
-    setTimeout(() => chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" }), 100);
   };
 
-  const done  = checklist.filter(c => c.done).length;
-  const total = checklist.length;
-  const pct   = Math.round((done / total) * 100);
+  const handleTimelineAction = (id: string, action: string) => {
+    setTimelineEvents(prev => prev.map(e => e.id === id ? { ...e, status: "completed" } : e));
+    if (action === "Block Now") {
+      setIocs(prev => prev.map(i => i.value === "41.221.72.109" ? { ...i, blocked: true } : i));
+      setConsoleHistory(prev => [...prev,
+        { text: "Executing manual boundary block command for 41.221.72.109...", type: "warning" },
+        { text: "[NSX API] Successfully generated rule drop_ipset_41.221.72.109", type: "info" },
+        { text: "SUCCESS: Edge firewall updated.", type: "success" }
+      ]);
+      sendChatMessage("[AUTOMATED] Perimeter rule executed. IP 41.221.72.109 has been dropped.", currentUser.name, "SYSTEM");
+    } else if (action === "Isolate") {
+      setConsoleHistory(prev => [...prev,
+        { text: "Quarantining subnet 192.168.12.0/24...", type: "warning" },
+        { text: "[VLAN Controller] Isolated VLAN-14 gateway routing.", type: "info" },
+        { text: "SUCCESS: Target subnet is now isolated.", type: "success" }
+      ]);
+      sendChatMessage("[AUTOMATED] Subnet 192.168.12.0/24 isolated from the production network.", currentUser.name, "SYSTEM");
+    } else if (action === "Link Cases") {
+      setConsoleHistory(prev => [...prev,
+        { text: "Linking current incident with campaign LIT-2026-59719...", type: "warning" },
+        { text: "[SIEM Correlation] Extracted indicators match APT-28 campaign profile.", type: "info" },
+        { text: "SUCCESS: Cases linked successfully.", type: "success" }
+      ]);
+      sendChatMessage("[SYSTEM] Incident linked with campaign LIT-2026-59719.", currentUser.name, "SYSTEM");
+    }
+  };
 
-  const relevantIncidents = incidents.filter(i =>
-    !["Resolved", "Contained", "Closed"].includes(i.status)
-  ).slice(0, 3);
+  const handleQueueAction = (id: string, type: string) => {
+    setActionQueue(prev => prev.map(q => q.id === id ? { ...q, status: "completed" } : q));
+    if (type === "execute") {
+      setIocs(prev => prev.map(i => i.value === "41.221.72.109" ? { ...i, blocked: true } : i));
+      setConsoleHistory(prev => [...prev,
+        { text: "Executing manual boundary block command for 41.221.72.109...", type: "warning" },
+        { text: "[NSX API] Successfully generated rule drop_ipset_41.221.72.109", type: "info" },
+        { text: "SUCCESS: Edge firewall updated.", type: "success" }
+      ]);
+      sendChatMessage("[AUTOMATED] Perimeter rule executed. IP 41.221.72.109 has been dropped.", currentUser.name, "SYSTEM");
+    } else if (type === "call") {
+      setCallTarget("Zomba Council IT Director (+265-888-921-209)");
+      setCallActive(true);
+    } else if (type === "update") {
+      setConsoleHistory(prev => [...prev,
+        { text: "Pushing indicators to national feed servers...", type: "warning" },
+        { text: "Updating Airtel Money C2 endpoints... OK", type: "info" },
+        { text: "Updating TNM Mpamba C2 endpoints... OK", type: "info" },
+        { text: "SUCCESS: Threat Intelligence Feed successfully synchronized.", type: "success" }
+      ]);
+    } else if (type === "draft") {
+      setReportActive(true);
+    }
+  };
+
+  const hashlib_mock = (str: string) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) - hash + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash).toString(16).substring(0, 8);
+  };
+
+  const handleCommandSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = consoleInput.trim();
+    if (!clean) return;
+
+    setConsoleHistory(prev => [...prev, { text: `$ ${clean}`, type: "input" }]);
+    setConsoleInput("");
+
+    const parts = clean.split(" ");
+    const cmd = parts[0].toLowerCase();
+    const arg = parts.slice(1).join(" ");
+
+    switch (cmd) {
+      case "/help":
+        setConsoleHistory(prev => [...prev,
+          { text: "Stealth Defense Toolkit - Command Console Interface", type: "info" },
+          { text: "  /block <IP|domain>  Apply edge blocking rule silently", type: "info" },
+          { text: "  /lockdown           Trigger extreme host-level lockdown", type: "info" },
+          { text: "  /status             Query stealth blocking engine telemetry", type: "info" },
+          { text: "  /clear              Clear console history", type: "info" }
+        ]);
+        break;
+      case "/block":
+        if (!arg) {
+          setConsoleHistory(prev => [...prev, { text: "Error: Missing target IP or domain.", type: "error" }]);
+        } else {
+          setIocs(prev => {
+            if (prev.find(item => item.value === arg)) return prev;
+            return [...prev, { value: arg, type: arg.includes(".") && isNaN(Number(arg.split(".")[0])) ? "domain" : "ip", confidence: 98, blocked: true, country: "MW", description: "Manual Perimeter Block" }];
+          });
+          setConsoleHistory(prev => [...prev,
+            { text: `Applying silent block on ${arg}...`, type: "info" },
+            { text: `[NSX API] IP-Set generated: ipset_${hashlib_mock(arg)}`, type: "info" },
+            { text: `[IP Tables] DROP rule injected for output ${arg}`, type: "info" },
+            { text: `SUCCESS: ${arg} blocked successfully. No logs written to disk.`, type: "success" }
+          ]);
+          sendChatMessage(`[CONSOLE] Block rule deployed on ${arg} at edge gateway.`, currentUser.name, "SYSTEM");
+        }
+        break;
+      case "/lockdown":
+        setConsoleHistory(prev => [...prev,
+          { text: "Applying extreme host-level lockdown sequence...", type: "warning" },
+          { text: "Flushing iptables rules... OK", type: "info" },
+          { text: "Default Deny policy applied... OK", type: "info" },
+          { text: "Local DNS Sinkhole configured... OK", type: "info" },
+          { text: "Outbound domain whitelist enabled... OK", type: "info" },
+          { text: "SYSTEM STATUS: SECURE (Lockdown Mode)", type: "success" }
+        ]);
+        setEmergency(true);
+        sendChatMessage("[CONSOLE] Host lockdown sequence initiated by Analyst.", currentUser.name, "SYSTEM");
+        break;
+      case "/status":
+        setConsoleHistory(prev => [...prev,
+          { text: "Stealth Network Blocker v1.0 Telemetry Status:", type: "info" },
+          { text: "  Daemon State: RUNNING (as process [kworker/0:1])", type: "info" },
+          { text: "  RAM Database (SQLite): INITIALIZED (:memory:)", type: "info" },
+          { text: "  Redis Broker: CONNECTED (localhost:6379)", type: "info" },
+          { text: "  Blocked Indicators Count: " + iocs.filter(i => i.blocked).length, type: "info" },
+          { text: "  Disk logging: DISABLED (stealth_mode = true)", type: "success" }
+        ]);
+        break;
+      case "/clear":
+        setConsoleHistory([]);
+        break;
+      default:
+        setConsoleHistory(prev => [...prev, { text: `Command not found: ${cmd}. Type /help for assistance.`, type: "error" }]);
+    }
+  };
+
+  const handleEscalateClick = () => {
+    setEscalatedLevel("CRITICAL RED ALERT");
+    setConsoleHistory(prev => [...prev, { text: "Threat Level Escalated: CRITICAL RED ALERT (9.9/10)", type: "warning" }]);
+    sendChatMessage("[SYSTEM] Incident escalated to National Alert Level - CRITICAL RED ALERT", currentUser.name, "SYSTEM");
+  };
+
+  const doneCount = checklist.filter(c => c.done).length;
+  const totalCount = checklist.length;
+  const pct = Math.round((doneCount / totalCount) * 100);
 
   const orgColor: Record<ChatMessage["type"], string> = {
     macert: "text-[#FFD600]",
@@ -604,167 +960,611 @@ function EocWarRoom({
     system: "text-emerald-400",
   };
 
+  const MITRE_TTPS = [
+    { code: "T1190", name: "Exploit Public-Facing App", tactic: "Initial Access", desc: "Attacker exploited SMBv1 exposure or employee portal vulnerability to establish foothold.", mit: "Isolate subnet, patch SMB services immediately." },
+    { code: "T1204", name: "User Execution", tactic: "Execution", desc: "Local user executed ransomware payload via malicious email attachment.", mit: "Disable macro permissions, sandbox email downloads." },
+    { code: "T1078", name: "Valid Accounts", tactic: "Persistence", desc: "Compromised admin credentials used to execute services laterally.", mit: "Rotate credentials, enforce MFA setups." },
+    { code: "T1562", name: "Impair Defenses", tactic: "Defense Evasion", desc: "Attacker cleared system logs and disabled service auditing.", mit: "Enable off-site remote log aggregation." },
+    { code: "T1071", name: "Application Layer Protocol", tactic: "Command & Control", desc: "C2 beacons transmitted outbound via encrypted web sockets.", mit: "Apply silent DNS sinkholing rules." },
+    { code: "T1486", name: "Data Encrypted for Impact", tactic: "Impact", desc: "Encryption script executed locally on Zomba Council records mainframe.", mit: "Offline backup restoration protocols." },
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-[#080c17] border border-red-500/30 rounded-2xl shadow-2xl">
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-[#080c17] border-b border-red-500/20 px-6 py-4 flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center">
-            <Crosshair className="w-5 h-5 text-red-400 animate-pulse" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-2 md:p-4">
+      <div className="w-full max-w-[95vw] h-[95vh] flex flex-col bg-[#05080f] border border-red-500/30 rounded-2xl shadow-2xl overflow-hidden relative">
+        
+        {/* Flashing ambient warning if emergency / lockdown active */}
+        {emergency && (
+          <div className="absolute inset-0 border-4 border-red-500 animate-pulse pointer-events-none z-40 bg-red-950/10" />
+        )}
+
+        {/* ─── Header ────────────────────────────────────────────────────────── */}
+        <div className="sticky top-0 z-30 bg-[#080c17]/95 border-b border-red-500/20 px-4 py-3 flex flex-wrap items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center">
+            <Crosshair className="w-4.5 h-4.5 text-red-400 animate-pulse" />
           </div>
           <div>
-            <h2 className="font-bebas text-xl text-white tracking-widest">EOC INCIDENT WAR ROOM — {districtName.toUpperCase()}</h2>
-            <p className="text-[10px] text-red-400 font-mono">Emergency Operations Center · MACERT Coordinated Response</p>
+            <h2 className="font-bebas text-lg md:text-xl text-white tracking-widest flex items-center gap-2">
+              ⚔️ EOC INCIDENT WAR ROOM — {districtName.toUpperCase()}
+              <span className="text-[9px] font-mono font-bold bg-red-500/20 border border-red-500/40 text-red-400 px-1.5 py-0.5 rounded animate-pulse">
+                {escalatedLevel}
+              </span>
+            </h2>
+            <p className="text-[9px] text-slate-500 font-mono">Republic of Malawi · Emergency Operations Center · Coordinated Incident Response</p>
           </div>
+          
+          <div className="hidden md:flex items-center gap-4 text-[9px] font-mono text-slate-500 ml-auto mr-4">
+            <div>
+              Status: <span className="text-red-400 font-bold animate-pulse">🔴 RED ALERT</span>
+            </div>
+            <div>
+              Operators: <span className="text-slate-300 font-bold">{connectedCount} Active</span>
+            </div>
+            <div>
+              Time: <span className="text-slate-300 font-bold">{currentTime.toLocaleTimeString()}</span>
+            </div>
+            <div>
+              Date: <span className="text-slate-300 font-bold">2026-06-19</span>
+            </div>
+          </div>
+
           <button
             onClick={onClose}
-            className="ml-auto p-2 rounded-lg hover:bg-white/5 text-slate-500 hover:text-white transition"
+            className="ml-auto md:ml-0 p-2 rounded-lg hover:bg-white/5 text-slate-500 hover:text-white transition"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
-          {/* Checklist */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-grotesk font-bold text-sm text-white flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                Response Action Checklist
-              </h3>
-              <span className="text-[10px] font-mono text-slate-400">{done}/{total} complete ({pct}%)</span>
-            </div>
-            {/* Progress bar */}
-            <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full bg-emerald-400 transition-all"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            {/* Items */}
-            <div className="space-y-2">
-              {checklist.map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => toggle(item.id)}
-                  className={`w-full flex items-start gap-3 text-left px-3 py-2.5 rounded-lg border transition ${
-                    item.done
-                      ? "border-emerald-500/30 bg-emerald-500/5"
-                      : item.critical
-                      ? "border-red-500/30 bg-red-500/5 hover:border-red-500/50"
-                      : "border-white/5 bg-white/2 hover:border-white/10"
-                  }`}
-                >
-                  <div className={`w-4 h-4 rounded shrink-0 mt-0.5 border flex items-center justify-center transition ${
-                    item.done ? "bg-emerald-500 border-emerald-400" : item.critical ? "border-red-500/60" : "border-white/20"
-                  }`}>
-                    {item.done && <CheckCircle2 className="w-3 h-3 text-white" />}
-                  </div>
-                  <span className={`text-[11px] font-mono ${
-                    item.done ? "text-emerald-400 line-through" : item.critical ? "text-red-300" : "text-slate-300"
-                  }`}>
-                    {item.critical && !item.done && <span className="text-red-500 mr-1">★</span>}
-                    {item.label}
-                  </span>
-                </button>
-              ))}
+        {/* ─── 3-Panel Main Layout ───────────────────────────────────────────── */}
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 p-4 overflow-y-auto lg:overflow-hidden min-h-0">
+          
+          {/* 1. LEFT PANEL (Situation Area) - lg:col-span-3 */}
+          <div className="lg:col-span-3 flex flex-col gap-4 overflow-y-auto h-full scrollbar-thin">
+            
+            {/* Live Threat Vector Map */}
+            <div className="border border-white/5 rounded-xl bg-black/40 p-3 flex flex-col gap-2 relative overflow-hidden shrink-0 h-[260px]">
+              <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 border-b border-white/5 pb-1">
+                <span>📍 SECURE SATELLITE RADAR FEED</span>
+                <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" /> LIVE</span>
+              </div>
+              <div className="flex-1 relative flex items-center justify-center">
+                <svg viewBox="0 0 200 300" className="w-full h-full max-h-[200px]">
+                  <circle cx="100" cy="150" r="130" fill="none" stroke="rgba(239, 68, 68, 0.05)" strokeWidth="0.5" />
+                  <circle cx="100" cy="150" r="90" fill="none" stroke="rgba(239, 68, 68, 0.08)" strokeWidth="0.5" />
+                  <circle cx="100" cy="150" r="50" fill="none" stroke="rgba(239, 68, 68, 0.12)" strokeWidth="0.5" />
+                  <line x1="100" y1="150" x2="200" y2="150" stroke="rgba(239, 68, 68, 0.15)" strokeWidth="1" className="origin-[100px_150px] animate-radar" />
+                  
+                  {/* Targets */}
+                  <circle cx="95" cy="130" r="4.5" fill="#ef4444" className="animate-pulse" />
+                  <text x="103" y="132" fill="#fff" fontSize="7.5" fontFamily="monospace" fontWeight="bold">LILONGWE (HQ)</text>
+                  <circle cx="120" cy="220" r="3.5" fill="#f97316" />
+                  <text x="126" y="222" fill="#94a3b8" fontSize="7" fontFamily="monospace">BLANTYRE</text>
+                  <circle cx="125" cy="190" r="3.5" fill="#eab308" />
+                  <text x="131" y="192" fill="#94a3b8" fontSize="7" fontFamily="monospace">ZOMBA</text>
+                  <circle cx="85" cy="60" r="3.5" fill="#3b82f6" />
+                  <text x="91" y="62" fill="#94a3b8" fontSize="7" fontFamily="monospace">MZUZU</text>
+
+                  {/* Lines representing international C2 vectors ingressing */}
+                  <path d="M 20,40 Q 60,80 95,130" fill="none" stroke="#ef4444" strokeWidth="1" strokeDasharray="4,3" className="flow-line" />
+                  <path d="M 180,80 Q 150,150 125,190" fill="none" stroke="#eab308" strokeWidth="0.8" strokeDasharray="4,3" className="flow-line" />
+                  <path d="M 10,240 Q 70,230 120,220" fill="none" stroke="#f97316" strokeWidth="0.8" strokeDasharray="4,3" className="flow-line" />
+                </svg>
+              </div>
             </div>
 
-            {/* Relevant Incidents */}
-            {relevantIncidents.length > 0 && (
-              <div className="space-y-2 border-t border-white/5 pt-4">
-                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active Incidents in War Room</h4>
-                {relevantIncidents.map(inc => (
-                  <div key={inc.id} className={`rounded-lg border px-3 py-2 ${
-                    inc.severity === "Critical" ? "border-red-500/25 bg-red-500/5" :
-                    inc.severity === "High" ? "border-orange-500/25 bg-orange-500/5" :
-                    "border-white/5 bg-white/2"
-                  }`}>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className={`text-[8px] font-bold uppercase px-1.5 py-0.5 rounded font-mono ${
-                        inc.severity === "Critical" ? "text-red-400 bg-red-500/20" :
-                        inc.severity === "High" ? "text-orange-400 bg-orange-500/20" : "text-slate-400"
-                      }`}>{inc.severity}</span>
-                      <span className="text-[9px] font-mono text-slate-600">{inc.id}</span>
-                      {(() => {
-                        if (inc.status !== "Reported") return <span className="text-[8px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1 rounded ml-auto font-mono">Compliance Met ✓</span>;
-                        const createdDate = new Date(inc.incidentDate);
-                        const diffHours = (Date.now() - createdDate.getTime()) / (1000 * 60 * 60);
-                        if (diffHours >= 24) {
-                          return <span className="text-[8px] text-red-400 bg-red-500/10 border border-red-500/20 px-1 rounded ml-auto font-bold font-mono">⚠️ SLA Breach: &gt;24h</span>;
-                        } else {
-                          const remaining = Math.max(0, Math.round(24 - diffHours));
-                          return <span className="text-[8px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 rounded ml-auto font-mono">SLA: {remaining}h left</span>;
-                        }
-                      })()}
+            {/* Response Units Status List */}
+            <div className="border border-white/5 rounded-xl bg-black/40 p-3 flex flex-col gap-2 shrink-0">
+              <div className="text-[10px] font-mono text-slate-400 border-b border-white/5 pb-1">
+                <span>🛡️ RESPONDER UNITS CONTROL</span>
+              </div>
+              <div className="space-y-1.5">
+                {unitStatus.map((unit, idx) => (
+                  <button
+                    key={unit.name}
+                    onClick={() => toggleUnitStatus(idx)}
+                    className="w-full flex items-center justify-between text-left p-2 rounded border border-white/5 hover:border-white/10 bg-white/2 transition cursor-pointer"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-bold text-slate-200 truncate">{unit.name}</div>
+                      <div className="text-[8px] text-slate-500">{unit.action}</div>
                     </div>
-                    <p className="text-[10px] text-slate-300">{inc.title}</p>
-                  </div>
+                    <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded font-bold ${
+                      unit.status === "online" ? "bg-emerald-500/10 text-emerald-400"
+                      : unit.status === "standby" ? "bg-amber-500/10 text-amber-400"
+                      : unit.status === "critical" ? "bg-red-500/10 text-red-400 animate-pulse"
+                      : "bg-white/5 text-slate-500"
+                    }`}>
+                      {unit.badge}
+                    </span>
+                  </button>
                 ))}
               </div>
-            )}
+            </div>
+
+            {/* Real-time stats */}
+            <div className="border border-white/5 rounded-xl bg-black/40 p-3 flex flex-col gap-2 flex-1 min-h-[120px]">
+              <div className="text-[10px] font-mono text-slate-400 border-b border-white/5 pb-1">
+                <span>📊 ATTACK WAVE TELEMETRY</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 flex-1 items-center">
+                <div className="bg-red-500/5 border border-red-500/20 rounded p-2 text-center h-full flex flex-col justify-center">
+                  <div className="text-[8px] font-mono text-slate-500">ATTACKS</div>
+                  <div className="text-xl font-orbitron font-bold text-red-400 leading-none mt-1">1,847</div>
+                  <div className="text-[7px] font-mono text-red-500/60 mt-1">↑ 14.8%</div>
+                </div>
+                <div className="bg-emerald-500/5 border border-emerald-500/20 rounded p-2 text-center h-full flex flex-col justify-center">
+                  <div className="text-[8px] font-mono text-slate-500">BLOCKED</div>
+                  <div className="text-xl font-orbitron font-bold text-emerald-400 leading-none mt-1">1,739</div>
+                  <div className="text-[7px] font-mono text-emerald-500/60 mt-1">94.2%</div>
+                </div>
+                <div className="bg-[#FFD600]/5 border border-[#FFD600]/20 rounded p-2 text-center h-full flex flex-col justify-center">
+                  <div className="text-[8px] font-mono text-slate-500">ACTIVE</div>
+                  <div className="text-xl font-orbitron font-bold text-[#FFD600] leading-none mt-1">108</div>
+                  <div className="text-[7px] font-mono text-[#FFD600]/60 mt-1">⚡ Dynamic</div>
+                </div>
+              </div>
+            </div>
+
           </div>
 
-          {/* Chat Feed */}
-          <div className="space-y-3">
-            <h3 className="font-grotesk font-bold text-sm text-white flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-blue-400" />
-              MACERT ↔ SOC Secure Channel
-            </h3>
-            <div
-              ref={chatRef}
-              className="h-[320px] overflow-y-auto space-y-2 bg-[#040709] border border-white/5 rounded-xl p-4"
-            >
-              {chatLog.map((msg, i) => (
-                <div key={i} className="space-y-0.5">
-                  <div className="flex items-center gap-2 text-[9px] font-mono">
-                    <span className={`font-bold ${orgColor[msg.type]}`}>{msg.sender}</span>
-                    <span className="text-slate-600">[{msg.org}]</span>
-                    <span className="text-slate-700 ml-auto">{msg.time}</span>
-                  </div>
-                  <div className="text-[10px] text-slate-300 pl-2 border-l border-white/5">{msg.msg}</div>
+          {/* 2. CENTER PANEL (Active Incident Response) - lg:col-span-5 */}
+          <div className="lg:col-span-5 flex flex-col gap-4 overflow-y-auto h-full scrollbar-thin min-h-0">
+            
+            {/* Active Incident Header */}
+            <div className="border border-red-500/30 bg-red-500/5 rounded-xl p-3 flex items-start gap-3 shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center justify-center shrink-0">
+                <Siren className="w-4 h-4 text-red-400 animate-pulse" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[8px] font-mono font-bold text-red-400 uppercase tracking-wider">CRITICAL INCIDENT ACTIVE</div>
+                <h3 className="text-xs font-bold text-white truncate mt-0.5">LIT-2028-30421 – {districtName} Council Ransomware</h3>
+                <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[8px] font-mono text-slate-400">
+                  <span className="flex items-center gap-1 text-red-400">⏱️ Active: <span className="font-bold">{formatElapsed(elapsedSeconds)}</span></span>
+                  <span>📊 Impact Score: 9.8/10</span>
+                  <span>👤 Assigned: MACERT-SOC</span>
                 </div>
-              ))}
-            </div>
-            {/* Send message */}
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={chatMsg}
-                onChange={e => setChatMsg(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && sendChat()}
-                placeholder="Type secure message and press Enter..."
-                className="flex-1 bg-[#0A0E1A] border border-white/10 focus:border-blue-500/50 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 outline-none font-mono"
-              />
-              <button
-                onClick={sendChat}
-                className="px-3 py-2 rounded-lg bg-blue-500/20 border border-blue-500/40 text-blue-400 hover:bg-blue-500/30 transition text-xs font-mono"
-              >
-                SEND
-              </button>
+              </div>
             </div>
 
-            {/* Forensics log */}
-            <div className="space-y-2 border-t border-white/5 pt-3">
-              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <Lock className="w-3 h-3" /> Forensics Evidence Log
-              </h4>
-              <div className="space-y-1">
-                {[
-                  { time: "14:01:33", entry: "Network capture started on VLAN-14 (Lilongwe SOC)" },
-                  { time: "14:03:12", entry: "Memory dump acquired from affected endpoint AST-004" },
-                  { time: "14:08:47", entry: "PCAP stored to encrypted Evidence Vault (EVD-2026-0441)" },
-                  { time: "14:11:02", entry: "Chain of custody signed by SOC-Lead and MACERT-Director" },
-                ].map((f, i) => (
-                  <div key={i} className="flex items-start gap-2 text-[9px] font-mono">
-                    <span className="text-slate-600 shrink-0">{f.time}</span>
-                    <span className="text-slate-400">{f.entry}</span>
+            {/* Live Operations Timeline */}
+            <div className="border border-white/5 rounded-xl bg-black/40 p-3 flex flex-col gap-2 shrink-0">
+              <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 border-b border-white/5 pb-1">
+                <span>⚡ LIVE OPERATIONS TIMELINE</span>
+                <span className="text-[8px] text-slate-500">LATEST TOP</span>
+              </div>
+              <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                {timelineEvents.map(event => (
+                  <div key={event.id} className="flex items-start gap-2.5 bg-white/2 rounded p-2 border border-white/5 relative overflow-hidden">
+                    <span className="text-[8px] font-mono text-slate-500 mt-0.5 shrink-0">{event.time}</span>
+                    <span className={`text-[7px] font-mono font-bold px-1.5 py-0.5 rounded border shrink-0 ${
+                      event.type === "urgent" ? "text-red-400 border-red-500/30 bg-red-500/10"
+                      : event.type === "critical" ? "text-orange-400 border-orange-500/30 bg-orange-500/10"
+                      : event.type === "action" ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
+                      : "text-purple-400 border-purple-500/30 bg-purple-500/10"
+                    }`}>{event.label}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[10px] text-slate-300 font-mono leading-tight">{event.msg}</div>
+                    </div>
+                    {event.actionLabel && (
+                      <div className="shrink-0">
+                        {event.status === "completed" ? (
+                          <span className="text-[8px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">✓ Done</span>
+                        ) : (
+                          <button
+                            onClick={() => handleTimelineAction(event.id, event.actionLabel)}
+                            className="text-[8px] font-mono font-bold bg-red-500 hover:bg-red-600 text-white px-2 py-0.5 rounded transition cursor-pointer"
+                          >
+                            {event.actionLabel}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {event.status === "completed" && !event.actionLabel && (
+                      <span className="text-[8px] font-mono text-emerald-500">✓ Done</span>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
+
+            {/* Action Queue */}
+            <div className="border border-white/5 rounded-xl bg-black/40 p-3 flex flex-col gap-2 shrink-0">
+              <div className="text-[10px] font-mono text-slate-400 border-b border-white/5 pb-1">
+                <span>📋 PENDING INCIDENT RUNBOOK QUEUE</span>
+              </div>
+              <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
+                {actionQueue.map(action => (
+                  <div key={action.id} className="flex items-center gap-2 p-2 bg-white/2 rounded border border-white/5">
+                    <span className={`text-[7px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                      action.priority.includes("CRITICAL") ? "bg-red-500/10 text-red-400 border border-red-500/20"
+                      : action.priority.includes("HIGH") ? "bg-orange-500/10 text-orange-400 border border-orange-500/20"
+                      : action.priority.includes("MEDIUM") ? "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"
+                      : "bg-white/5 text-slate-400"
+                    }`}>{action.priority}</span>
+                    <span className="text-[10px] font-mono text-slate-300 flex-1 truncate">{action.msg}</span>
+                    {action.timer && <span className="text-[8px] text-slate-500 font-mono">{action.timer}</span>}
+                    {action.status === "completed" ? (
+                      <span className="text-[8px] font-mono text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded shrink-0">✓ Deployed</span>
+                    ) : (
+                      <button
+                        onClick={() => handleQueueAction(action.id, action.type)}
+                        className="text-[8px] font-mono font-bold bg-white/5 border border-white/10 hover:border-[#FFD600]/40 text-slate-300 hover:text-[#FFD600] px-2 py-0.5 rounded transition cursor-pointer"
+                      >
+                        {action.type === "execute" ? "Execute" : action.type === "call" ? "📞 Call" : action.type === "update" ? "Update" : "Draft"}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Secure Chat */}
+            <div className="border border-white/5 rounded-xl bg-black/40 p-3 flex flex-col gap-2 flex-1 min-h-[220px]">
+              <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 border-b border-white/5 pb-1">
+                <span>🔐 SECURE MACERT/SOC FUSION CHANNEL</span>
+                <span className={`text-[8px] font-mono font-bold flex items-center gap-1 ${isConnected ? "text-emerald-400" : "text-red-500"}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? "bg-emerald-400 animate-pulse" : "bg-red-500"}`} />
+                  {isConnected ? "AES-256 SECURE" : "DISCONNECTED"}
+                </span>
+              </div>
+              <div
+                ref={chatRef}
+                className="flex-1 overflow-y-auto space-y-2 p-2 bg-[#040709] border border-white/5 rounded-lg h-[120px] scrollbar-thin"
+              >
+                {chatLog.map((msg, i) => (
+                  <div key={i} className="space-y-0.5 font-mono text-[9px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`font-bold ${orgColor[msg.type] || "text-slate-300"}`}>{msg.sender}</span>
+                      <span className="text-slate-600">[{msg.org}]</span>
+                      <span className="text-slate-700 ml-auto">{msg.time}</span>
+                    </div>
+                    <div className="text-[10px] text-slate-300 pl-2 border-l border-white/5 leading-normal">{msg.msg}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={chatMsg}
+                  onChange={e => setChatMsg(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && sendChat()}
+                  placeholder="Type secure message and press Enter..."
+                  className="flex-1 bg-[#0A0E1A] border border-white/10 focus:border-red-500/40 rounded px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none font-mono"
+                />
+                <button
+                  onClick={sendChat}
+                  className="px-3 py-1.5 rounded bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20 hover:border-blue-500/50 transition text-xs font-mono font-bold cursor-pointer"
+                >
+                  SEND
+                </button>
+              </div>
+            </div>
+
+            {/* Command Console */}
+            <div className="border border-[rgba(0,255,65,0.15)] bg-black/90 rounded-xl p-3 flex flex-col gap-2 shrink-0 h-[220px]">
+              <div className="flex items-center justify-between text-[9px] font-mono text-[rgba(0,255,65,0.7)] border-b border-[rgba(0,255,65,0.12)] pb-1">
+                <span>🛡️ COMMAND SHELL - STEALTH DEPLOYMENT KIT</span>
+                <span className="text-[7px] text-[rgba(0,255,65,0.5)]">TTY02_SEC</span>
+              </div>
+              <div className="flex-1 overflow-y-auto space-y-1 font-mono text-[9px] text-[rgba(0,255,65,0.9)] scrollbar-thin">
+                {consoleHistory.map((line, idx) => (
+                  <div key={idx} className={`leading-normal ${
+                    line.type === "success" ? "text-emerald-400"
+                    : line.type === "error" ? "text-rose-400"
+                    : line.type === "warning" ? "text-[#FFD600]"
+                    : line.type === "input" ? "text-[#00e5ff]"
+                    : "text-slate-400"
+                  }`}>
+                    {line.text}
+                  </div>
+                ))}
+                <div ref={consoleEndRef} />
+              </div>
+              <form onSubmit={handleCommandSubmit} className="flex gap-2 border-t border-[rgba(0,255,65,0.12)] pt-1.5">
+                <span className="text-[rgba(0,255,65,0.9)] font-mono text-xs select-none">$</span>
+                <input
+                  type="text"
+                  value={consoleInput}
+                  onChange={e => setConsoleInput(e.target.value)}
+                  placeholder="Enter stealth boundary command (e.g. /help, /block <IP>, /lockdown)..."
+                  className="flex-1 bg-transparent text-[rgba(0,255,65,0.9)] placeholder-[rgba(0,255,65,0.25)] text-xs font-mono outline-none border-none"
+                />
+              </form>
+            </div>
+
+          </div>
+
+          {/* 3. RIGHT PANEL (Intelligence Panel) - lg:col-span-4 */}
+          <div className="lg:col-span-4 flex flex-col gap-4 overflow-y-auto h-full scrollbar-thin">
+            
+            {/* Live IOC Dashboard */}
+            <div className="border border-white/5 rounded-xl bg-black/40 p-3 flex flex-col gap-2 shrink-0">
+              <div className="text-[10px] font-mono text-slate-400 border-b border-white/5 pb-1">
+                <span>🔍 ACTIVE IOC ATTACK INDICATORS</span>
+              </div>
+              <div className="space-y-1.5 max-h-[190px] overflow-y-auto pr-1">
+                {iocs.map(ioc => (
+                  <div key={ioc.value} className="flex items-center justify-between p-2 bg-white/2 rounded border border-white/5 text-[9px] font-mono">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-1 h-1 rounded-full ${ioc.type === "ip" ? "bg-cyan-400" : "bg-purple-400"}`} />
+                        <span className="text-slate-200 font-bold truncate max-w-[120px]">{ioc.value}</span>
+                        <span className="text-slate-500">({ioc.type.toUpperCase()})</span>
+                      </div>
+                      <div className="text-slate-500 mt-0.5">{ioc.description}</div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`text-[7px] font-bold px-1 py-0.5 rounded ${
+                        ioc.confidence >= 90 ? "bg-red-500/10 text-red-400 border border-red-500/20"
+                        : ioc.confidence >= 60 ? "bg-orange-500/10 text-orange-400 border border-orange-500/20"
+                        : "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"
+                      }`}>{ioc.confidence}% Conf.</span>
+                      <button
+                        onClick={() => {
+                          setIocs(prev => prev.map(i => i.value === ioc.value ? { ...i, blocked: !i.blocked } : i));
+                          setConsoleHistory(prev => [...prev, { text: `Stealth block status toggled for ${ioc.value} to ${!ioc.blocked ? 'BLOCKED' : 'ALLOWED'}`, type: "warning" }]);
+                        }}
+                        className={`text-[8px] font-bold px-2 py-0.5 rounded border transition cursor-pointer ${
+                          ioc.blocked ? "bg-red-500/15 border-red-500/30 text-red-400"
+                          : "bg-white/5 border-white/10 text-slate-400 hover:border-white/20 hover:text-white"
+                        }`}
+                      >
+                        {ioc.blocked ? "BLOCKED" : "BLOCK"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* MITRE ATT&CK Matrix Grid */}
+            <div className="border border-white/5 rounded-xl bg-black/40 p-3 flex flex-col gap-2 shrink-0">
+              <div className="text-[10px] font-mono text-slate-400 border-b border-white/5 pb-1">
+                <span>📊 ATT&CK TTACTIC MAP (MITRE MATRIX)</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {MITRE_TTPS.map(ttp => (
+                  <button
+                    key={ttp.code}
+                    onClick={() => setSelectedTtp(selectedTtp === ttp.code ? null : ttp.code)}
+                    className={`p-2 rounded border text-left transition relative overflow-hidden cursor-pointer ${
+                      selectedTtp === ttp.code ? "bg-purple-500/10 border-purple-500/50"
+                      : "bg-white/2 border-white/5 hover:border-white/10"
+                    }`}
+                  >
+                    <div className="flex justify-between items-start text-[8px] font-mono font-bold text-slate-400 mb-1">
+                      <span className="text-[#FFD600]">{ttp.code}</span>
+                      <span className="truncate max-w-[80px]">{ttp.tactic}</span>
+                    </div>
+                    <div className="text-[10px] font-mono text-slate-200 font-bold truncate">{ttp.name}</div>
+                  </button>
+                ))}
+              </div>
+              {selectedTtp && (() => {
+                const ttp = MITRE_TTPS.find(t => t.code === selectedTtp);
+                return (
+                  <div className="bg-purple-950/20 border border-purple-500/20 rounded p-2.5 text-[9px] font-mono text-slate-300 space-y-1 mt-1 animate-fade-in">
+                    <div><strong>Tactics Group:</strong> <span className="text-purple-400 font-bold">{ttp?.tactic} ({ttp?.code})</span></div>
+                    <div><strong>Observation Detail:</strong> {ttp?.desc}</div>
+                    <div><strong>Containment Action:</strong> <span className="text-emerald-400 font-semibold">{ttp?.mit}</span></div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Related Historical Cases */}
+            <div className="border border-white/5 rounded-xl bg-black/40 p-3 flex flex-col gap-2 flex-1 min-h-[140px]">
+              <div className="text-[10px] font-mono text-slate-400 border-b border-white/5 pb-1">
+                <span>📚 HISTORICAL CORRELATED CAMPAIGNS</span>
+              </div>
+              <div className="space-y-1.5 flex-1 overflow-y-auto scrollbar-thin font-mono text-[9px]">
+                {[
+                  { id: "LIT-2026-59719", title: "Blantyre Financial Spearphishing", date: "2026-04-12", severity: "High", risk: "81%" },
+                  { id: "LIT-2028-1002", title: "Capital Hill Mainframe Exfiltration", date: "2028-02-09", severity: "Critical", risk: "95%" }
+                ].map(c => (
+                  <div key={c.id} className="p-2 rounded border border-white/5 bg-white/2 flex justify-between items-center">
+                    <div>
+                      <div className="text-slate-300 font-bold">{c.id} — {c.title}</div>
+                      <div className="text-slate-500 text-[8px] mt-0.5">Date: {c.date} · Threat Level: {c.severity}</div>
+                    </div>
+                    <span className="text-[#FFD600] font-bold bg-[#FFD600]/10 px-1.5 rounded shrink-0">{c.risk} Cor.</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* ─── Bottom Bar Controls ───────────────────────────────────────────── */}
+        <div className="sticky bottom-0 z-30 bg-[#080c17]/95 border-t border-white/5 px-4 py-2.5 flex items-center justify-between shrink-0">
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setEmergency(!emergency);
+                setConsoleHistory(prev => [...prev, {
+                  text: emergency ? "Emergency protocol deactivated." : "EMERGENCY PROTOCOL ENGAGED! Alerts broadcast to MACRA DG and response cell.",
+                  type: emergency ? "info" : "error"
+                }]);
+                sendChatMessage(emergency ? "[SYSTEM] Emergency alert deactivated." : "[ALERT] Emergency response protocol triggered by Analyst.", currentUser.name, "SYSTEM");
+              }}
+              className={`px-4 py-2 text-white font-mono text-xs font-bold rounded-lg border transition cursor-pointer shadow-lg hover:brightness-110 active:scale-95 ${
+                emergency ? "bg-red-600 border-red-500 animate-pulse"
+                : "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20"
+              }`}
+            >
+              🔴 {emergency ? "ABORT EMERGENCY" : "EMERGENCY PROTOCOL"}
+            </button>
+            
+            <button
+              onClick={() => {
+                setCallTarget("MACRA Director General");
+                setCallActive(true);
+              }}
+              className="px-4 py-2 bg-white/5 border border-white/10 hover:border-blue-500/40 text-slate-300 hover:text-blue-400 font-mono text-xs font-bold rounded-lg transition cursor-pointer"
+            >
+              📞 CALL DG
+            </button>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={handleEscalateClick}
+              className="px-4 py-2 bg-white/5 border border-white/10 hover:border-orange-500/40 text-slate-300 hover:text-orange-400 font-mono text-xs font-bold rounded-lg transition cursor-pointer"
+            >
+              🛡️ ESCALATE LEVEL
+            </button>
+            <button
+              onClick={() => setReportActive(true)}
+              className="px-4 py-2 bg-white/5 border border-white/10 hover:border-cyan-500/40 text-slate-300 hover:text-cyan-400 font-mono text-xs font-bold rounded-lg transition cursor-pointer"
+            >
+              📊 DRAFT REPORT
+            </button>
+            <button
+              onClick={() => setAiActive(true)}
+              className="px-4 py-2 bg-purple-500/15 border border-purple-500/30 text-purple-400 hover:bg-purple-500/25 font-mono text-xs font-bold rounded-lg transition cursor-pointer"
+            >
+              ⚡ AI CONTAINMENT
+            </button>
           </div>
         </div>
+
+        {/* ─── VoIP Phone Screen Overlay ─────────────────────────────────────── */}
+        {callActive && (
+          <div className="absolute inset-0 bg-black/90 z-[200] flex items-center justify-center p-4">
+            <div className="w-full max-w-sm p-6 border border-[#FFD600]/40 bg-[#0a0e1a] rounded-2xl flex flex-col items-center space-y-6 text-center shadow-2xl relative overflow-hidden font-mono">
+              <div className="absolute inset-x-0 top-0 h-0.5 bg-[#FFD600]/60 animate-bounce" />
+              <div className="w-16 h-16 rounded-full bg-[#FFD600]/10 border border-[#FFD600]/40 flex items-center justify-center animate-pulse shrink-0 font-mono">
+                <Phone className="w-8 h-8 text-[#FFD600]" />
+              </div>
+              <div className="space-y-1.5">
+                <div className="text-white text-xs font-bold tracking-widest uppercase">ESTABLISHING SECURE VOICE BRIDGE...</div>
+                <div className="text-slate-400 text-xs font-semibold">{callTarget}</div>
+              </div>
+              <div className="w-full bg-black/40 border border-white/5 rounded-lg p-3 text-[9px] text-slate-500 space-y-1 text-left">
+                <div>Encryption Key: DH-4096 / GCM-256</div>
+                <div>Signal Integrity: SECURE (Encrypted Pipeline Established)</div>
+                <div>Routing: Lilongwe EOC Core ↔ Airtel VoIP Trunk</div>
+              </div>
+              <button 
+                onClick={() => setCallActive(false)} 
+                className="w-full py-2.5 bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs rounded-lg transition cursor-pointer shadow-lg active:scale-95 font-mono"
+              >
+                DISCONNECT VOICE BRIDGE
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ─── Report Draft Screen Overlay ───────────────────────────────────── */}
+        {reportActive && (
+          <div className="absolute inset-0 bg-black/90 z-[200] flex items-center justify-center p-4">
+            <div className="w-full max-w-2xl h-[80vh] flex flex-col bg-[#0a0e1a] border border-blue-500/30 rounded-2xl shadow-2xl overflow-hidden font-mono">
+              <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between bg-black/40 shrink-0">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-blue-400" />
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">STIX 2.1 Threat Report Draft</span>
+                </div>
+                <button onClick={() => setReportActive(false)} className="text-slate-400 hover:text-white transition"><X className="w-4.5 h-4.5" /></button>
+              </div>
+              
+              <div className="flex-1 p-4 overflow-y-auto">
+                <pre className="text-[9px] text-emerald-400 bg-black/60 p-3 rounded-lg border border-white/5 overflow-x-auto leading-relaxed">
+{`{
+  "type": "bundle",
+  "id": "bundle--${hashlib_mock(districtName)}-4b4e",
+  "spec_version": "2.1",
+  "objects": [
+    {
+      "type": "incident",
+      "spec_version": "2.1",
+      "id": "incident--${districtName.toLowerCase()}-council-ransomware",
+      "name": "${districtName} Council Ransomware Incursion",
+      "description": "Coordinated ransomware deployment targeting employee records mainframe.",
+      "severity": "CRITICAL",
+      "created": "${new Date().toISOString()}",
+      "labels": ["ransomware", "malawi-emergency"]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--${hashlib_mock("41.221.72.109")}",
+      "name": "C2 Command & Control Beacon",
+      "pattern": "[ipv4-addr:value = '41.221.72.109']",
+      "pattern_type": "stix",
+      "valid_from": "${new Date().toISOString()}"
+    }
+  ]
+}`}
+                </pre>
+              </div>
+
+              <div className="px-5 py-3 border-t border-white/5 bg-black/40 flex justify-end gap-2 shrink-0">
+                <button 
+                  onClick={() => {
+                    setConsoleHistory(prev => [...prev, { text: "Threat report draft exported to Evidence Vault successfully.", type: "success" }]);
+                    setReportActive(false);
+                  }} 
+                  className="px-4 py-2 bg-blue-500 hover:bg-blue-400 text-black font-bold text-xs rounded-lg transition cursor-pointer active:scale-95"
+                >
+                  EXPORT TO EVIDENCE VAULT
+                </button>
+                <button 
+                  onClick={() => setReportActive(false)} 
+                  className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-bold rounded-lg transition cursor-pointer"
+                >
+                  CANCEL
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── AI Triage Screen Overlay ──────────────────────────────────────── */}
+        {aiActive && (
+          <div className="absolute inset-0 bg-black/90 z-[200] flex items-center justify-center p-4">
+            <div className="w-full max-w-lg bg-[#0a0e1a] border border-purple-500/30 rounded-2xl shadow-2xl overflow-hidden p-5 space-y-4 font-mono">
+              <div className="flex items-center gap-2 border-b border-white/5 pb-3">
+                <Bot className="w-5 h-5 text-purple-400 animate-pulse" />
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">SENTINEL AI CONTAINMENT ADVISORY</h3>
+              </div>
+              
+              <div className="text-[11px] text-slate-300 space-y-3 leading-relaxed">
+                <p><strong>Incident Vector:</strong> Coordinated lateral ransomware spread targeting directory systems in Zomba.</p>
+                <div className="p-3 rounded-lg bg-purple-950/20 border border-purple-500/20 text-purple-300 space-y-2">
+                  <div className="font-bold uppercase text-[10px]">Triage Protocol Recommendations:</div>
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li>Deploy default-deny rules at edge gateway (VLAN-14).</li>
+                    <li>Isolate affected host AST-004 from production subnets.</li>
+                    <li>Initiate a full SIM-freeze on flagged Airtel/TNM mobile gateways.</li>
+                  </ul>
+                </div>
+                <p className="text-[9px] text-slate-500">Gemini 2.5 Flash Triage Engine · Confidence Level: 94%</p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-white/5">
+                <button 
+                  onClick={() => {
+                    setConsoleHistory(prev => [...prev, { text: "AI Containment strategy applied to response units successfully.", type: "success" }]);
+                    setAiActive(false);
+                  }} 
+                  className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white text-xs font-bold rounded-lg transition cursor-pointer active:scale-95"
+                >
+                  APPLY ADVISORY PROTOCOL
+                </button>
+                <button 
+                  onClick={() => setAiActive(false)} 
+                  className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-bold rounded-lg transition cursor-pointer"
+                >
+                  CLOSE
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
@@ -887,7 +1687,7 @@ export default function SituationRoom({ incidents = [], stats }: SituationRoomPr
   const [correlationDetail, setCorrelationDetail] = useState<any | null>(null);
 
   // WebSocket live connection
-  const { isConnected, lastIncident } = useWarRoomWS();
+  const { isConnected, lastIncident, lastChatMsg, sendChatMessage, connectedCount } = useWarRoomWS();
   const [liveNewIncident, setLiveNewIncident] = useState<any>(null);
 
   useEffect(() => {
@@ -1036,19 +1836,21 @@ export default function SituationRoom({ incidents = [], stats }: SituationRoomPr
               </button>
             </div>
             <div className="space-y-2">
-              {criticalActive.slice(0, 3).map(inc => {
+              {criticalActive.slice(0, 3).map((inc, idx) => {
                 const { label: tsLabel, minutesSince } = timeSince(inc.incidentDate);
                 const score = (inc as any).priorityScore ?? 0;
-                const escalated = inc.severity === "Critical" && minutesSince > 30;
+                const escalated = minutesSince > 30;
                 return (
-                  <div key={inc.id} className="flex items-center gap-3 bg-black/30 rounded-lg px-3 py-2 border border-red-500/15">
-                    <PriorityBadge score={score} level={(inc as any).priorityLevel ?? ""} />
-                    <span className="text-[10px] font-mono text-slate-300 truncate flex-1">{inc.title}</span>
+                  <div key={inc.id} className="flex items-center gap-3 bg-black/40 rounded-lg px-3 py-2.5 border border-red-500/20 relative overflow-hidden">
+                    {/* Left severity stripe */}
+                    <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-red-500" />
+                    <PriorityBadge score={score} level={(inc as any).priorityLevel ?? ""} severity={inc.severity} />
+                    <span className="text-[10px] font-mono text-slate-200 truncate flex-1 font-semibold">{inc.title}</span>
                     <span className="text-[9px] font-mono text-slate-500 shrink-0">{inc.id}</span>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <span className="text-[9px] font-mono text-slate-500">{tsLabel}</span>
                       {escalated && (
-                        <span className="text-[8px] font-bold text-red-400 bg-red-500/15 border border-red-500/30 px-1.5 py-0.5 rounded font-mono">⚡ AUTO-ESCALATED</span>
+                        <span className="text-[8px] font-bold text-red-300 bg-red-500/20 border border-red-500/40 px-1.5 py-0.5 rounded font-mono animate-pulse">⚡ AUTO-ESCALATED</span>
                       )}
                     </div>
                   </div>
@@ -1103,75 +1905,108 @@ export default function SituationRoom({ incidents = [], stats }: SituationRoomPr
             onSectorClick={(id, label, health) => setSectorDetail({ id, label, health })}
           />
 
-          {/* Live Threat Feed */}
-          <div className="card p-5 space-y-3">
-            <h3 className="font-grotesk font-bold text-sm text-white flex items-center gap-2 border-b border-white/5 pb-3">
-              <div className="w-1 h-4 bg-red-500 rounded animate-pulse" />
-              Live National Threat Intelligence Feed
-              <span className="ml-auto flex items-center gap-2">
+          {/* ── Live National Threat Intelligence Feed ── */}
+          <div className="terminal-bg p-0 overflow-hidden">
+            {/* Animated scan line */}
+            <div className="scan-line" />
+
+            {/* Feed header */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-[rgba(0,255,65,0.12)] relative z-10">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-[9px] font-mono font-bold text-red-400 uppercase tracking-widest">Live Threat Intelligence Feed</span>
+              </div>
+              <div className="ml-auto flex items-center gap-2">
                 <button
                   onClick={() => setFeedPaused(p => !p)}
                   className={`text-[9px] font-mono px-2 py-0.5 rounded border transition ${
                     feedPaused
                       ? "bg-[#FFD600]/10 border-[#FFD600]/30 text-[#FFD600]"
-                      : "bg-white/5 border-white/10 text-slate-400 hover:border-white/20"
+                      : "bg-white/5 border-white/10 text-slate-500 hover:border-white/20"
                   }`}
                 >
                   {feedPaused ? "▶ PLAY" : "⏸ PAUSE"}
                 </button>
-                <span className="text-[9px] font-mono text-slate-500">MACERT · AbuseIPDB · HOVER FOR SCORE</span>
-              </span>
-            </h3>
-            <div className="space-y-2">
-              {NATIONAL_THREATS.map(threat => (
-                <div
-                  key={threat.id}
-                  onMouseEnter={() => { setHoveredThreat(threat.id); if (threat.ip) fetchThreatScore(threat.ip, threat.id); }}
-                  onMouseLeave={() => setHoveredThreat(null)}
-                  className="relative"
-                >
-                  <button 
-                    onClick={() => setThreatDetail(threat)}
-                    className="w-full text-left bg-[#05080F]/60 border border-white/5 hover:border-red-500/40 rounded-xl p-3 space-y-1.5 transition cursor-pointer hover:bg-white/2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[8px] font-bold uppercase px-1.5 py-0.5 rounded font-mono border ${
-                        threat.level === "CRITICAL" ? "text-red-400 border-red-500/30 bg-red-500/10" :
-                        threat.level === "HIGH"     ? "text-orange-400 border-orange-500/30 bg-orange-500/10" :
-                        "text-[#FFD600] border-[#FFD600]/30 bg-[#FFD600]/10"
-                      }`}>{threat.level}</span>
-                      {/* Threat Score pill */}
-                      {threat.ip && threatScores[threat.ip] !== undefined && (
-                        <span className={`text-[8px] font-bold font-mono px-1.5 py-0.5 rounded border ${
-                          (threatScores[threat.ip] ?? 0) >= 80 ? "text-red-400 bg-red-500/10 border-red-500/30" :
-                          (threatScores[threat.ip] ?? 0) >= 50 ? "text-orange-400 bg-orange-500/10 border-orange-500/30" :
-                          (threatScores[threat.ip] ?? 0) >= 20 ? "text-amber-400 bg-amber-500/10 border-amber-500/30" :
-                          "text-emerald-400 bg-emerald-500/10 border-emerald-500/30"
-                        }`}>
-                          {threatScores[threat.ip] === null ? "…" : `SCORE ${threatScores[threat.ip]}`}
-                        </span>
-                      )}
-                      <span className="text-[9px] font-mono text-slate-500">{threat.feed}</span>
-                      <span className="ml-auto text-[9px] font-mono text-slate-600">{threat.time}</span>
-                    </div>
-                    <p className="text-[10px] text-slate-400 leading-relaxed">{threat.msg}</p>
-                  </button>
-                </div>
-              ))}
+                <span className="text-[8px] font-mono text-slate-600">MACERT · AbuseIPDB · HOVER→SCORE</span>
+              </div>
             </div>
+
+            {/* Feed rows */}
+            <div className="relative z-10 divide-y divide-[rgba(255,255,255,0.04)]">
+              {NATIONAL_THREATS.map((threat, idx) => {
+                const levelColor =
+                  threat.level === "CRITICAL" ? { bar: "bg-red-500",    badge: "text-red-400 border-red-500/30 bg-red-500/10",     icon: "text-red-500" } :
+                  threat.level === "HIGH"     ? { bar: "bg-orange-500", badge: "text-orange-400 border-orange-500/30 bg-orange-500/10", icon: "text-orange-500" } :
+                                               { bar: "bg-yellow-400", badge: "text-yellow-400 border-yellow-500/30 bg-yellow-500/10", icon: "text-yellow-400" };
+                const score = threat.ip && threatScores[threat.ip];
+                return (
+                  <div
+                    key={threat.id}
+                    onMouseEnter={() => { setHoveredThreat(threat.id); if (threat.ip) fetchThreatScore(threat.ip, threat.id); }}
+                    onMouseLeave={() => setHoveredThreat(null)}
+                    className="relative"
+                  >
+                    <button
+                      onClick={() => setThreatDetail(threat)}
+                      className={`w-full text-left px-4 py-3 transition-all group relative overflow-hidden ${
+                        hoveredThreat === threat.id ? "bg-white/3" : "bg-transparent"
+                      }`}
+                    >
+                      {/* Left severity stripe */}
+                      <div className={`absolute left-0 top-0 bottom-0 w-0.5 ${levelColor.bar}`} />
+
+                      <div className="flex items-center gap-2 mb-1.5 pl-2">
+                        {/* Severity badge */}
+                        <span className={`text-[7px] font-bold uppercase px-1.5 py-0.5 rounded font-mono border ${levelColor.badge}`}>
+                          {threat.level}
+                        </span>
+                        {/* IP badge */}
+                        {threat.ip && (
+                          <span className="text-[8px] font-mono text-slate-500 bg-white/3 border border-white/8 px-1.5 py-0.5 rounded">
+                            {threat.ip}
+                          </span>
+                        )}
+                        {/* Score pill (on hover) */}
+                        {score !== undefined && (
+                          <span className={`text-[8px] font-bold font-mono px-1.5 py-0.5 rounded border ${
+                            (score ?? 0) >= 80 ? "text-red-400 bg-red-500/10 border-red-500/30" :
+                            (score ?? 0) >= 50 ? "text-orange-400 bg-orange-500/10 border-orange-500/30" :
+                            "text-amber-400 bg-amber-500/10 border-amber-500/30"
+                          }`}>
+                            {score === null ? "SCORING…" : `THREAT·${score}`}
+                          </span>
+                        )}
+                        {/* Feed source */}
+                        <span className="text-[8px] font-mono text-slate-600 ml-auto">{threat.feed}</span>
+                        <span className="text-[8px] font-mono text-slate-700">{threat.time}</span>
+                      </div>
+
+                      <p className="text-[11px] text-slate-300 leading-relaxed pl-2 font-mono">{threat.msg}</p>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
             {/* Response units */}
-            <div className="border-t border-white/5 pt-3 space-y-1.5">
-              <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wider mb-2">Response Unit Status</p>
-              {[
-                { name: "MACERT Response Team",  status: "On Standby" },
-                { name: "Police Cybercrime Unit", status: "Investigating" },
-                { name: "MDF Cyber-Cell",         status: "On Alert" },
-              ].map(u => (
-                <div key={u.name} className="flex items-center justify-between text-[10px] font-mono">
-                  <span className="text-slate-400">{u.name}</span>
-                  <span className={u.status === "Investigating" ? "text-orange-400" : u.status === "On Alert" ? "text-red-400" : "text-[#FFD600]"}>{u.status}</span>
-                </div>
-              ))}
+            <div className="border-t border-[rgba(0,255,65,0.08)] px-4 py-3 relative z-10">
+              <div className="text-[8px] font-mono text-slate-600 uppercase tracking-widest mb-2">Response Unit Status</div>
+              <div className="space-y-1.5">
+                {[
+                  { name: "MACERT Response Team",  status: "On Standby",   dot: "bg-[#FFD600]" },
+                  { name: "Police Cybercrime Unit", status: "Investigating", dot: "bg-orange-400" },
+                  { name: "MDF Cyber-Cell",         status: "On Alert",     dot: "bg-red-500 animate-pulse" },
+                ].map(u => (
+                  <div key={u.name} className="flex items-center gap-2 text-[10px] font-mono">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${u.dot}`} />
+                    <span className="text-slate-400 flex-1">{u.name}</span>
+                    <span className={`font-bold ${
+                      u.status === "Investigating" ? "text-orange-400" :
+                      u.status === "On Alert"      ? "text-red-400" : "text-[#FFD600]"
+                    }`}>{u.status}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -1179,22 +2014,37 @@ export default function SituationRoom({ incidents = [], stats }: SituationRoomPr
 
       {/* ─── Enter EOC War Room CTA ─── */}
       {incidents.some(i => i.severity === "Critical" && !["Resolved", "Contained", "Closed"].includes(i.status)) && (
-        <div className="rounded-2xl border border-red-500/40 bg-red-500/5 p-5 flex items-center gap-5">
-          <div className="w-12 h-12 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center shrink-0">
-            <Siren className="w-6 h-6 text-red-400 animate-pulse" />
+        <div className="animate-pulse-critical rounded-2xl relative overflow-hidden">
+          {/* Animated top edge glow */}
+          <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-red-950/60 via-red-900/30 to-transparent rounded-2xl" />
+
+          <div className="relative p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="flex items-center gap-4">
+              {/* Icon */}
+              <div className="relative shrink-0">
+                <div className="absolute inset-0 bg-red-500/30 rounded-xl blur-lg animate-pulse" />
+                <div className="relative w-14 h-14 rounded-xl bg-red-500/20 border border-red-500/60 flex items-center justify-center">
+                  <Siren className="w-7 h-7 text-red-400" />
+                </div>
+              </div>
+              <div>
+                <div className="font-bebas text-2xl text-red-400 tracking-widest leading-none">⚠ CRITICAL INCIDENT ACTIVE</div>
+                <p className="text-slate-400 text-[11px] mt-1 font-mono">
+                  EOC activation required · MACERT Coordinated Response Protocol · Auto-escalation engaged
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setWarRoom({ districtId: "lilongwe", name: "Lilongwe" })}
+              id="enter-war-room-btn"
+              className="sm:ml-auto flex items-center gap-2.5 px-6 py-3 rounded-xl bg-red-500 hover:bg-red-400 text-white font-bold font-mono text-sm transition-all hover:shadow-[0_0_30px_rgba(239,68,68,0.5)] active:scale-95 shrink-0"
+            >
+              <Crosshair className="w-4 h-4" />
+              ENTER EOC WAR ROOM
+            </button>
           </div>
-          <div>
-            <div className="text-red-400 font-bold font-mono text-sm">⚠ CRITICAL INCIDENT ACTIVE</div>
-            <p className="text-slate-400 text-xs mt-0.5">A critical incident is active. Click to enter the EOC War Room and coordinate the national response.</p>
-          </div>
-          <button
-            onClick={() => setWarRoom({ districtId: "lilongwe", name: "Lilongwe" })}
-            id="enter-war-room-btn"
-            className="ml-auto flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-500 hover:bg-red-400 text-white text-xs font-bold font-mono transition shrink-0"
-          >
-            <Crosshair className="w-4 h-4" />
-            ENTER EOC WAR ROOM
-          </button>
         </div>
       )}
 
@@ -1202,40 +2052,73 @@ export default function SituationRoom({ incidents = [], stats }: SituationRoomPr
       <AiCommanderPanel />
 
       {/* ─── SIEM Correlation Engine ─── */}
-      <div className="card p-5 space-y-4">
-        <h3 className="font-grotesk font-bold text-sm text-white flex items-center gap-2 border-b border-white/5 pb-3">
-          <div className="w-1 h-4 bg-purple-500 rounded" />
-          SIEM Correlation Engine — Event Aggregation
-          <span className="ml-auto text-[9px] font-mono text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded">LIVE CORRELATION · CLICK CARD FOR DETAILS</span>
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {CORRELATION_EVENTS.map(corr => (
-            <button 
-              key={corr.title} 
-              onClick={() => setCorrelationDetail(corr)}
-              className={`rounded-xl border p-4 space-y-3 text-left w-full cursor-pointer hover:border-white/20 transition ${
-                corr.score >= 90 ? "border-red-500/25 bg-red-500/5 hover:border-red-500/40" :
-                corr.score >= 80 ? "border-orange-500/25 bg-orange-500/5 hover:border-orange-500/40" :
-                "border-[#FFD600]/20 bg-[#FFD600]/5 hover:border-[#FFD600]/40"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold text-white">{corr.title}</h4>
-                <span className="font-bebas text-2xl text-[#FFD600]">{corr.score}</span>
-              </div>
-              <ul className="space-y-1">
-                {corr.events.slice(0, 3).map((e, i) => (
-                  <li key={i} className="flex items-start gap-1.5 text-[10px] text-slate-400">
-                    <span className="text-[#FFD600] mt-0.5">+</span> {e}
-                  </li>
-                ))}
-                {corr.events.length > 3 && (
-                  <li className="text-[9px] font-mono text-slate-500 italic">+ {corr.events.length - 3} more signals...</li>
-                )}
-              </ul>
-              <div className="text-[9px] font-mono font-bold text-[#FFD600] border-t border-white/5 pt-2">{corr.outcome}</div>
-            </button>
-          ))}
+      <div className="rounded-xl border border-purple-500/20 bg-purple-500/3 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-purple-500/15">
+          <div className="w-1.5 h-5 bg-purple-500 rounded-full" />
+          <span className="font-grotesk font-bold text-sm text-white">SIEM Correlation Engine</span>
+          <span className="text-[9px] font-mono text-slate-500">Event Aggregation · Rule Matching</span>
+          <span className="ml-auto flex items-center gap-1.5 text-[9px] font-mono text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded">
+            <span className="w-1 h-1 rounded-full bg-purple-400 animate-pulse" />
+            LIVE CORRELATION
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
+          {CORRELATION_EVENTS.map((corr, idx) => {
+            const isHigh   = corr.score >= 90;
+            const isMed    = corr.score >= 80;
+            const topColor = isHigh ? "bg-red-500" : isMed ? "bg-orange-500" : "bg-yellow-400";
+            const borderCl = isHigh ? "border-red-500/30 hover:border-red-500/50" : isMed ? "border-orange-500/25 hover:border-orange-500/45" : "border-yellow-500/20 hover:border-yellow-500/40";
+            const bgCl     = isHigh ? "bg-red-500/6" : isMed ? "bg-orange-500/5" : "bg-yellow-500/4";
+            const scoreCl  = isHigh ? "text-red-400" : isMed ? "text-orange-400" : "text-yellow-400";
+            return (
+              <button
+                key={corr.title}
+                onClick={() => setCorrelationDetail(corr)}
+                className={`rounded-xl border overflow-hidden text-left w-full cursor-pointer transition-all group ${borderCl} ${bgCl}`}
+              >
+                {/* Top severity stripe */}
+                <div className={`h-0.5 ${topColor}`} />
+
+                <div className="p-4 space-y-3">
+                  {/* Title + Score */}
+                  <div className="flex items-start justify-between gap-2">
+                    <h4 className="text-[11px] font-bold text-white leading-tight">{corr.title}</h4>
+                    <div className="text-right shrink-0">
+                      <div className={`font-orbitron text-3xl font-bold leading-none ${scoreCl}`}>{corr.score}</div>
+                      <div className="text-[7px] font-mono text-slate-600 uppercase">risk score</div>
+                    </div>
+                  </div>
+
+                  {/* Events */}
+                  <ul className="space-y-1.5">
+                    {corr.events.slice(0, 3).map((e, i) => (
+                      <li key={i} className="flex items-start gap-2 text-[10px] text-slate-400">
+                        <span className={`shrink-0 mt-0.5 font-bold ${scoreCl}`}>›</span>
+                        <span className="leading-tight">{e}</span>
+                      </li>
+                    ))}
+                    {corr.events.length > 3 && (
+                      <li className="text-[9px] font-mono text-slate-600">+{corr.events.length - 3} more signals</li>
+                    )}
+                  </ul>
+
+                  {/* Outcome */}
+                  <div className={`text-[9px] font-mono font-bold border-t border-white/5 pt-2 ${scoreCl}`}>
+                    → {corr.outcome}
+                  </div>
+
+                  {/* Rules matched */}
+                  <div className="flex flex-wrap gap-1">
+                    {corr.rulesMatched.slice(0, 2).map(r => (
+                      <span key={r} className="text-[7px] font-mono px-1.5 py-0.5 rounded bg-white/4 border border-white/8 text-slate-500">{r}</span>
+                    ))}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -1245,6 +2128,10 @@ export default function SituationRoom({ incidents = [], stats }: SituationRoomPr
           districtName={warRoom.name}
           incidents={incidents}
           onClose={() => setWarRoom(null)}
+          isConnected={isConnected}
+          lastChatMsg={lastChatMsg}
+          sendChatMessage={sendChatMessage}
+          connectedCount={connectedCount}
         />
       )}
 

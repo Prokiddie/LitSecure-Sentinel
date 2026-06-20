@@ -60,8 +60,15 @@ import stixRoutes        from "./server/routes/stix.js";
 import publicReportRoutes from "./server/routes/publicReport.js";
 import aiLearningRoutes  from "./server/routes/aiLearning.js";
 import mfaRoutes         from "./server/routes/mfa.js";
+import vulnerabilityRoutes from "./server/routes/vulnerabilities.js";
+import metricsRoutes from "./server/routes/metrics.js";
+import redteamRoutes     from "./server/routes/redteam.js";
+import breakGlassRoutes, { killSwitchMiddleware } from "./server/routes/breakGlass.js";
 import { isSupabaseEnabled, backfillToSupabase } from "./server/db/supabase-client.js";
 import { startThreatFeedScheduler } from "./server/services/threatFeeds.js";
+import { startRedTeamScheduler }    from "./server/services/redTeamEngine.js";
+import { startAdversarialAIScheduler } from "./server/services/adversarialAITesting.js";
+import { recordRequest } from "./server/services/behaviorAnomalyDetection.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || "3000", 10);
@@ -98,15 +105,38 @@ app.use(
 const rawOrigins = process.env.ALLOWED_ORIGINS || "";
 const originAllowlist = rawOrigins
   ? rawOrigins.split(",").map(o => o.trim()).filter(Boolean)
-  : null; // null = allow all in dev
+  : [];
 
 app.use(cors({
-  origin: isProd && originAllowlist
-    ? (origin, cb) => {
-        if (!origin || originAllowlist.includes(origin)) cb(null, true);
-        else cb(new Error(`CORS: origin '${origin}' not allowed`));
+  origin: (origin, cb) => {
+    // Development allows all origins
+    if (!isProd) {
+      cb(null, true);
+      return;
+    }
+    // Production strict whitelisting
+    const appUrl = process.env.APP_URL;
+    if (originAllowlist.length > 0) {
+      if (!origin || originAllowlist.includes(origin) || origin === appUrl) {
+        cb(null, true);
+      } else {
+        cb(new Error(`CORS: origin '${origin}' not allowed in production`));
       }
-    : (process.env.APP_URL || true),
+    } else if (appUrl) {
+      if (!origin || origin === appUrl) {
+        cb(null, true);
+      } else {
+        cb(new Error(`CORS: origin '${origin}' does not match APP_URL`));
+      }
+    } else {
+      // production with no CORS config -> restrict to same-origin only
+      if (!origin) {
+        cb(null, true);
+      } else {
+        cb(new Error("CORS: Blocked in production (no origin whitelist configured)"));
+      }
+    }
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Request-ID"],
@@ -119,6 +149,26 @@ app.use(express.urlencoded({ extended: true }));
 // ─── HTTP Request Logger ──────────────────────────────────────────────────────
 app.use(requestLogger);
 
+// ─── Break Glass Kill Switch (must be before all routes) ─────────────────────
+app.use(killSwitchMiddleware);
+
+// ─── Behavioral Anomaly Detection (passive observer on every API request) ─────
+app.use("/api", (req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    recordRequest({
+      ip:            req.ip || req.socket.remoteAddress || "unknown",
+      userId:        (req as any).user?.id ?? null,
+      endpoint:      req.path,
+      method:        req.method,
+      statusCode:    res.statusCode,
+      responseBytes: parseInt(res.getHeader("content-length") as string || "0") || 0,
+      requestBytes:  parseInt(req.headers["content-length"] || "0") || 0,
+    });
+  });
+  next();
+});
+
 // ─── Global API Rate Limiter ──────────────────────────────────────────────────
 app.use("/api", apiLimiter);
 
@@ -128,6 +178,7 @@ app.use("/api", auditLogger);
 // ─── Public Routes (no auth) ──────────────────────────────────────────────────
 app.use("/api/auth",   authRoutes);
 app.use("/api/health", healthRoutes); // includes /live and /ready probes
+app.use("/metrics",    metricsRoutes); // Prometheus metrics scraper
 app.use("/api/public", publicReportRoutes); // Citizen reporting — rate-limited
 
 // ─── Protected Routes (JWT required) ─────────────────────────────────────────
@@ -155,6 +206,7 @@ app.use("/api/at",             atRoutes);
 app.use("/api/terminal",       requireAuth, terminalRoutes);
 app.use("/api/users",          requireAuth, userRoutes);
 app.use("/api/social",         requireAuth, socialRoutes);
+app.use("/api/cyber/vulnerabilities", requireAuth, vulnerabilityRoutes);
 app.use("/api/cyber",          requireAuth, cyberRoutes);
 app.use("/api/netintel",       requireAuth, netIntelRoutes);
 
@@ -180,6 +232,15 @@ app.use("/api/ai-learning",    requireAuth, aiLearningRoutes);
 // ─── Phase 5: MFA endpoints (under /api/auth/mfa/*) ─────────────────────────
 app.use("/api/auth/mfa",       mfaRoutes);
 
+// ─── Phase 5: Vulnerability Management endpoints ────────────────────────────
+app.use("/api/vulnerabilities", requireAuth, vulnerabilityRoutes);
+
+// ─── Phase 6: Continuous Adversarial Security Engine ─────────────────────────
+// Red Team results, AI test loop, behavioral anomalies — all require auth
+app.use("/api/redteam",        requireAuth, redteamRoutes);
+// Break Glass: status read needs auth; mutating ops need soc_manager/admin (enforced inside)
+app.use("/api/break-glass",    requireAuth, breakGlassRoutes);
+
 // ─── Backward Compat: /api/stats → /api/incidents/meta/stats ─────────────────
 // Inline handler avoids HTTP redirect that would drop the Authorization header
 app.get("/api/stats", requireAuth, (req, res, next) => {
@@ -203,6 +264,7 @@ app.use("/api/v1/reputation",   requireAuth, reputationRoutes);
 app.use("/api/v1/edr",          requireAuth, edrRoutes);
 app.use("/api/v1/netintel",     requireAuth, netIntelRoutes);
 app.use("/api/v1/public",       publicReportRoutes);
+app.use("/api/v1/vulnerabilities", requireAuth, vulnerabilityRoutes);
 
 // ─── Vite Dev / Static Serving ────────────────────────────────────────────────
 async function startServer() {
@@ -241,6 +303,8 @@ async function startServer() {
 
     // ─── Start background services ───────────────────────────────────────────
     startThreatFeedScheduler();
+    startRedTeamScheduler();
+    startAdversarialAIScheduler();
 
     // ─── Hourly cleanup: purge expired revoked tokens ────────────────────────
     setInterval(() => {

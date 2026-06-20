@@ -19,8 +19,11 @@
 import { Router, Request, Response } from "express";
 import { createHash } from "crypto";
 import net from "net";
+import fs from "fs";
+import path from "path";
 import { queries, generateId } from "../db/index.js";
 import { requireRole } from "../middleware/auth.js";
+import { analyzeMalware } from "../services/malwareAnalysis.js";
 
 const router = Router();
 
@@ -50,10 +53,14 @@ router.get("/ip/:address", async (req: Request, res: Response) => {
 
     let abusePromise = Promise.resolve(null);
     const abuseKey = process.env.ABUSEIPDB_API_KEY;
-    if (abuseKey && abuseKey !== "your_abuseipdb_api_key_here") {
+    const hasAbuseKey = !!(abuseKey && 
+      abuseKey.toLowerCase() !== "your_abuseipdb_api_key_here" && 
+      abuseKey.toLowerCase() !== "your_abuseipdb_key_here");
+
+    if (hasAbuseKey) {
       abusePromise = fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(address)}&maxAgeInDays=90&verbose=true`, {
         headers: {
-          "Key": abuseKey,
+          "Key": abuseKey!,
           "Accept": "application/json"
         },
         signal: AbortSignal.timeout(5000)
@@ -80,7 +87,8 @@ router.get("/ip/:address", async (req: Request, res: Response) => {
 
     res.json({
       ...geoData,
-      abuse: abuseData
+      abuse: abuseData,
+      abuseEnabled: hasAbuseKey
     });
   } catch (err: any) {
     res.status(502).json({ error: err.message });
@@ -352,6 +360,45 @@ router.get("/threat-score/:indicator", requireRole("admin", "analyst", "investig
   }
 
   return res.json({ indicator, score, isIp, ...detail });
+});
+
+// ─── POST /api/cyber/malware/analyze ──────────────────────────────────────────
+// Accepts base64 encoded file data and runs it through the static + reputational analysis engine.
+router.post("/malware/analyze", requireRole("admin", "analyst", "investigator", "soc_manager"), async (req: Request, res: Response) => {
+  const { fileName, fileData } = req.body;
+  if (!fileName || !fileData) {
+    return res.status(400).json({ error: "fileName and fileData (base64) are required." });
+  }
+
+  // Strip prefix
+  const base64 = fileData.replace(/^data:[^;]+;base64,/, "");
+  const buffer = Buffer.from(base64, "base64");
+
+  // Write temporary file
+  const tempDir = path.resolve("./data/temp_malware");
+  fs.mkdirSync(tempDir, { recursive: true });
+  const tempPath = path.join(tempDir, `temp_${Date.now()}_${fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`);
+
+  try {
+    fs.writeFileSync(tempPath, buffer);
+
+    const result = await analyzeMalware({
+      filePath: tempPath,
+      fileName,
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    console.error("[Malware Analysis Endpoint Error]", err);
+    res.status(500).json({ error: "ANALYSIS_FAILED", message: err.message });
+  } finally {
+    // Cleanup temporary file
+    try {
+      if (fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+      }
+    } catch {}
+  }
 });
 
 export default router;

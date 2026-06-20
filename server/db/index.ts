@@ -341,6 +341,31 @@ db.exec(`
     confidence INTEGER NOT NULL DEFAULT 80,
     added_at   TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS server_events (
+    id           TEXT PRIMARY KEY,
+    event_type   TEXT NOT NULL,
+    payload      TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'PENDING',
+    retry_count  INTEGER NOT NULL DEFAULT 0,
+    error_log    TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL,
+    processed_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS vulnerabilities (
+    id              TEXT PRIMARY KEY,
+    cve_id          TEXT NOT NULL UNIQUE,
+    title           TEXT NOT NULL,
+    description     TEXT NOT NULL,
+    cvss_score      REAL NOT NULL,
+    severity        TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'Open',
+    affected_assets TEXT NOT NULL DEFAULT '[]',
+    remediation     TEXT NOT NULL DEFAULT '',
+    detected_at     TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+  );
 `);
 
 // ─── Schema Migrations (idempotent) ────────────────────────────────────────────
@@ -594,6 +619,15 @@ export const queries = {
         geo_country=@geo_country, geo_isp=@geo_isp, last_enriched=@last_enriched
     WHERE value=@value
   `),
+
+  // Vulnerabilities
+  getAllVulnerabilities: db.prepare("SELECT * FROM vulnerabilities ORDER BY cvss_score DESC"),
+  getVulnerabilityById:  db.prepare("SELECT * FROM vulnerabilities WHERE id = ?"),
+  insertVulnerability:   db.prepare(`
+    INSERT OR REPLACE INTO vulnerabilities (id, cve_id, title, description, cvss_score, severity, status, affected_assets, remediation, detected_at, updated_at)
+    VALUES (@id, @cve_id, @title, @description, @cvss_score, @severity, @status, @affected_assets, @remediation, @detected_at, @updated_at)
+  `),
+  updateVulnerabilityStatus: db.prepare("UPDATE vulnerabilities SET status = ?, updated_at = ? WHERE id = ?"),
 };
 
 export default db;

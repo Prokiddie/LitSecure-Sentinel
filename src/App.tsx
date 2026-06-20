@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import {
   Activity, Terminal, BarChart3,
   Globe, RefreshCw, Video, Database,
@@ -6,7 +6,7 @@ import {
   ShieldCheck, AlertTriangle, Radio,
   Monitor, Code2, FileText, Settings, BookOpen,
   MapPin, Zap, TrendingUp, FolderLock, Wifi, Brain,
-  Contrast
+  Contrast, FolderOpen, Crosshair
 } from "lucide-react";
 import CommandPalette from "./components/CommandPalette";
 import ThreatHierarchy from "./components/ThreatHierarchy";
@@ -14,44 +14,57 @@ import { Incident, NationalStats } from "./types";
 import { useRealTimeStats } from "./hooks/useRealTimeStats";
 import LiveKpiBar from "./components/LiveKpiBar";
 import GlobalAiChat from "./components/GlobalAiChat";
-import ReportForm from "./components/ReportForm";
-import RoleConsole from "./components/RoleConsole";
-import LiveFeed from "./components/LiveFeed";
-import ThreatIntelDatabase from "./components/ThreatIntelDatabase";
-import AnalyticsDashboard from "./components/AnalyticsDashboard";
-import CctvSurveillance from "./components/CctvSurveillance";
-import DatabaseConsole from "./components/DatabaseConsole";
+import TriageWorkspace from "./components/TriageWorkspace";
+import AgencyBar, { AgencyId } from "./components/AgencyBar";
+import FloatingReportFAB from "./components/FloatingReportFAB";
 import LoginPage from "./components/LoginPage";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { LitSecureIcon, LitSecureWordmark } from "./components/LitSecureLogo";
-import AiThreatAnalysis from "./components/AiThreatAnalysis";
-import SituationRoom from "./components/SituationRoom";
-import EdrEndpointProtection from "./components/EdrEndpointProtection";
-import SecurityRulesOrchestrator from "./components/SecurityRulesOrchestrator";
-import ReportsRecommendations from "./components/ReportsRecommendations";
-import IntegrationsSettings from "./components/IntegrationsSettings";
-import CyberAwarenessHub from "./components/CyberAwarenessHub";
-import MalawiRiskMap from "./components/MalawiRiskMap";
-import CampaignCorrelation from "./components/CampaignCorrelation";
-import SectorRiskScoring from "./components/SectorRiskScoring";
 import NotificationCenter from "./components/NotificationCenter";
-import EvidenceVault from "./components/EvidenceVault";
-import CyberTerminal from "./components/CyberTerminal";
-import UserManagement from "./components/UserManagement";
-import SocialMediaMonitor from "./components/SocialMediaMonitor";
-import CyberIntelligence  from "./components/CyberIntelligence";
 import PortalDashboard from "./components/PortalDashboard";
-import PublicPortal from "./components/PublicPortal";
-import NetworkIntelligence from "./components/NetworkIntelligence";
-import GlobalCyberMap from "./components/GlobalCyberMap";
-import PolicyManagement from "./components/PolicyManagement";
-import TakedownTracker from "./components/TakedownTracker";
-import ReputationChecker from "./components/ReputationChecker";
-import CyberAwarenessTraining from "./components/CyberAwarenessTraining";
-import StixExportPanel from "./components/StixExportPanel";
-import PublicReportPage from "./components/PublicReportPage";
-import IncidentReportManager from "./components/IncidentReportManager";
-import AiLearningPanel from "./components/AiLearningPanel";
+import { WarRoomWSProvider, useWarRoomWS } from "./hooks/useWarRoomWS";
+
+// ─── Lazy Loaded Tab Components ──────────────────────────────────────────────
+const PublicPortal = lazy(() => import("./components/PublicPortal"));
+const PublicReportPage = lazy(() => import("./components/PublicReportPage"));
+
+// ─── Lazy Loaded Tab Components ──────────────────────────────────────────────
+const RoleConsole = lazy(() => import("./components/RoleConsole"));
+const LiveFeed = lazy(() => import("./components/LiveFeed"));
+const ThreatIntelDatabase = lazy(() => import("./components/ThreatIntelDatabase"));
+const AnalyticsDashboard = lazy(() => import("./components/AnalyticsDashboard"));
+const CctvSurveillance = lazy(() => import("./components/CctvSurveillance"));
+const DatabaseConsole = lazy(() => import("./components/DatabaseConsole"));
+const AiThreatAnalysis = lazy(() => import("./components/AiThreatAnalysis"));
+const SituationRoom = lazy(() => import("./components/SituationRoom"));
+const EdrEndpointProtection = lazy(() => import("./components/EdrEndpointProtection"));
+const SecurityRulesOrchestrator = lazy(() => import("./components/SecurityRulesOrchestrator"));
+const ReportsRecommendations = lazy(() => import("./components/ReportsRecommendations"));
+const IntegrationsSettings = lazy(() => import("./components/IntegrationsSettings"));
+const CyberAwarenessHub = lazy(() => import("./components/CyberAwarenessHub"));
+const MalawiRiskMap = lazy(() => import("./components/MalawiRiskMap"));
+const CampaignCorrelation = lazy(() => import("./components/CampaignCorrelation"));
+const SectorRiskScoring = lazy(() => import("./components/SectorRiskScoring"));
+const EvidenceVault = lazy(() => import("./components/EvidenceVault"));
+const CyberTerminal = lazy(() => import("./components/CyberTerminal"));
+const UserManagement = lazy(() => import("./components/UserManagement"));
+const SocialMediaMonitor = lazy(() => import("./components/SocialMediaMonitor"));
+const CyberIntelligence = lazy(() => import("./components/CyberIntelligence"));
+const NetworkIntelligence = lazy(() => import("./components/NetworkIntelligence"));
+const GlobalCyberMap = lazy(() => import("./components/GlobalCyberMap"));
+const PolicyManagement = lazy(() => import("./components/PolicyManagement"));
+const TakedownTracker = lazy(() => import("./components/TakedownTracker"));
+const ReputationChecker = lazy(() => import("./components/ReputationChecker"));
+const CyberAwarenessTraining = lazy(() => import("./components/CyberAwarenessTraining"));
+const StixExportPanel = lazy(() => import("./components/StixExportPanel"));
+const IncidentReportManager = lazy(() => import("./components/IncidentReportManager"));
+const AiLearningPanel = lazy(() => import("./components/AiLearningPanel"));
+const CaseManagement = lazy(() => import("./components/CaseManagement"));
+const MitreAttackNavigator = lazy(() => import("./components/MitreAttackNavigator"));
+const SoarPlaybookEngine = lazy(() => import("./components/SoarPlaybookEngine"));
+const AiTriageEngine = lazy(() => import("./components/AiTriageEngine"));
+const SiemCorrelation = lazy(() => import("./components/SiemCorrelation"));
+const RedTeamDashboard = lazy(() => import("./components/RedTeamDashboard"));
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 interface AuthUser { id: string; email: string; name: string; role: string; }
@@ -103,6 +116,12 @@ const TABS = [
   { id: "stix",       icon: Globe,        label: "STIX/TAXII Export",        short: "STIX",        allowedRoles: ["admin","super_admin","gov_admin","soc_manager"], badge: "P3" },
   { id: "incidentmgr",icon: FileText,     label: "Incident Manager",          short: "Inc. Mgr",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator"], badge: "NEW" },
   { id: "ailearn",    icon: Brain,        label: "AI Learning Center",        short: "AI Learn",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator"], badge: "ML" },
+  { id: "casemgmt",   icon: FolderOpen,   label: "Case Management",            short: "Cases",      allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator"], badge: "NEW" },
+  { id: "mitre",      icon: Crosshair,    label: "MITRE ATT&CK Navigator",     short: "ATT&CK",     allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator"], badge: "NEW" },
+  { id: "soar",       icon: Zap,          label: "SOAR Playbooks",             short: "SOAR",       allowedRoles: ["admin","super_admin","gov_admin","soc_manager"],                         badge: "AI" },
+  { id: "triage",     icon: Brain,        label: "AI Triage Engine",           short: "AI Triage",  allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst"],               badge: "AI" },
+  { id: "siem",       icon: Database,     label: "SIEM Correlation",           short: "SIEM",       allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"],        badge: "NEW" },
+  { id: "redteam",    icon: Crosshair,    label: "Red Team Engine",             short: "Red Team",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"],        badge: "🔴" },
 ] as const;
 type TabId = typeof TABS[number]["id"];
 
@@ -237,39 +256,9 @@ function LiveSectorNodes() {
   );
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
+// ─── AppContent (Dashboard View) ──────────────────────────────────────────────
 export default function App() {
   const [auth, setAuth]           = useState(getStoredAuth);
-  const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [stats, setStats]         = useState<NationalStats | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>("portal");
-  const [highContrast, setHighContrast] = useState(false);
-
-  // Apply high-contrast class to root
-  useEffect(() => {
-    document.documentElement.classList.toggle("high-contrast", highContrast);
-  }, [highContrast]);
-  // ── Reset active tab to first allowed tab when user role changes ──────────
-  const prevUserIdRef = React.useRef<string | null>(null);
-  React.useEffect(() => {
-    const uid = auth.user?.id ?? null;
-    if (uid !== prevUserIdRef.current) {
-      prevUserIdRef.current = uid;
-      if (uid) {
-        const allowed = getVisibleTabs(auth.user!.role);
-        if (!allowed.find(t => t.id === activeTab)) {
-          setActiveTab((allowed[0]?.id ?? "portal") as TabId);
-        }
-      }
-    }
-  }, [auth.user?.id, auth.user?.role]);
-  const [aiChatIncidentId, setAiChatIncidentId] = useState<string>("");
-  const [loading, setLoading]     = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [globalSearch, setGlobalSearch] = useState("");
-
-  // ── Live real-time stats (Supabase or API polling) ────────────────────────
-  const liveStats = useRealTimeStats();
 
   const handleLogin = (token: string, user: AuthUser) => {
     sessionStorage.setItem("sentinel_token", token);
@@ -283,6 +272,101 @@ export default function App() {
     sessionStorage.removeItem("sentinel_user");
     setAuth({ token: null, user: null });
   };
+
+  // Pre-login Public Citizen Portal (?report=1 or #/report in URL)
+  const isPublicReportURL =
+    window.location.search.includes("report=1") ||
+    window.location.hash.includes("/report") ||
+    window.location.pathname === "/report";
+
+  if (isPublicReportURL && (!auth.token || !auth.user)) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={
+          <div className="min-h-screen bg-[#05080F] flex flex-col items-center justify-center text-slate-500 font-mono gap-3">
+            <RefreshCw className="w-6 h-6 animate-spin text-[#FFD600]" />
+            <span className="text-xs uppercase tracking-widest text-slate-400">Loading Report Portal...</span>
+          </div>
+        }>
+          <PublicReportPage onGoToLogin={() => {
+            const url = new URL(window.location.href);
+            url.searchParams.delete("report");
+            url.hash = "";
+            window.history.replaceState({}, "", url.toString());
+            window.location.reload();
+          }} />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  // Unauthenticated (normal login)
+  if (!auth.token || !auth.user) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
+
+  // Citizen / Public Portal (citizen + org_user roles)
+  const isCitizenRole = auth.user.role === "citizen" || auth.user.role === "org_user";
+  if (isCitizenRole) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={
+          <div className="min-h-screen bg-[#05080F] flex flex-col items-center justify-center text-slate-500 font-mono gap-3">
+            <RefreshCw className="w-6 h-6 animate-spin text-[#FFD600]" />
+            <span className="text-xs uppercase tracking-widest text-slate-400">Loading Citizen Portal...</span>
+          </div>
+        }>
+          <PublicPortal
+            user={auth.user}
+            token={auth.token}
+            onLogout={handleLogout}
+            onIncidentAdded={() => {}}
+          />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  return (
+    <WarRoomWSProvider>
+      <AppContent auth={auth} onLogout={handleLogout} />
+    </WarRoomWSProvider>
+  );
+}
+
+function AppContent({ auth, onLogout }: { auth: { token: string; user: AuthUser }; onLogout: () => void }) {
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [stats, setStats]         = useState<NationalStats | null>(null);
+  const [activeTab, setActiveTab] = useState<TabId>("portal");
+  const [highContrast, setHighContrast] = useState(false);
+  const [activeAgency, setActiveAgency] = useState<AgencyId>("ALL");
+  const [aiChatIncidentId, setAiChatIncidentId] = useState<string>("");
+  const [loading, setLoading]     = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState("");
+
+  const liveStats = useRealTimeStats();
+  const handleLogout = onLogout;
+
+  // Apply high-contrast class to root
+  useEffect(() => {
+    document.documentElement.classList.toggle("high-contrast", highContrast);
+  }, [highContrast]);
+
+  // Reset active tab to first allowed tab when user role changes
+  const prevUserIdRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    const uid = auth.user?.id ?? null;
+    if (uid !== prevUserIdRef.current) {
+      prevUserIdRef.current = uid;
+      if (uid) {
+        const allowed = getVisibleTabs(auth.user!.role);
+        if (!allowed.find(t => t.id === activeTab)) {
+          setActiveTab((allowed[0]?.id ?? "portal") as TabId);
+        }
+      }
+    }
+  }, [auth.user?.id, auth.user?.role, activeTab]);
 
   const fetchAppData = useCallback(async (showRefreshIndicator = false) => {
     if (showRefreshIndicator) setRefreshing(true);
@@ -304,60 +388,48 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!auth.token) { setLoading(false); return; }
     fetchAppData();
-    const interval = setInterval(() => fetchAppData(false), 10000);
-    return () => clearInterval(interval);
-  }, [auth.token, fetchAppData]);
+  }, [fetchAppData]);
+
+  // Real-time WebSocket Push logic
+  const { lastIncident } = useWarRoomWS();
+
+  useEffect(() => {
+    if (lastIncident) {
+      setIncidents(prev => {
+        if (prev.some(i => i.id === lastIncident.id)) return prev;
+        const fullNewIncident: Incident = {
+          id: lastIncident.id,
+          title: lastIncident.title,
+          description: "New incident received via WebSocket push. Synchronizing details...",
+          category: (lastIncident.category as any) || "Unknown",
+          severity: (lastIncident.severity as any) || "Medium",
+          status: "Reported",
+          reporterName: "System Push",
+          reporterContact: "N/A",
+          reporterOrg: "External Push Node",
+          incidentDate: new Date().toISOString(),
+          assignedInvestigator: null,
+          updates: [],
+          mitigationAdvice: "",
+          compromisedIndicators: { phoneNumbers: [], ips: [], domains: [], devices: [] },
+          analysisSummary: "Enriched details being synchronized.",
+          priorityScore: lastIncident.priorityScore,
+          priorityLevel: lastIncident.priorityLevel,
+          priorityFactors: lastIncident.priorityFactors,
+        } as any;
+        return [fullNewIncident, ...prev];
+      });
+      // Fetch full details and update dependent stats
+      fetchAppData(false);
+    }
+  }, [lastIncident, fetchAppData]);
 
   const handleIncidentAdded = (newIncident: Incident) => {
     setIncidents(prev => [newIncident, ...prev]);
     fetchAppData(false);
   };
 
-  // ─── Pre-login Public Citizen Portal (⁠?report=1 or #/report in URL) ─────────────
-  // Citizens can report cyber crimes without creating an account.
-  const isPublicReportURL =
-    window.location.search.includes("report=1") ||
-    window.location.hash.includes("/report") ||
-    window.location.pathname === "/report";
-
-  if (isPublicReportURL && (!auth.token || !auth.user)) {
-    return (
-      <ErrorBoundary>
-        <PublicReportPage onGoToLogin={() => {
-          // Strip the public=1 param and go to login
-          const url = new URL(window.location.href);
-          url.searchParams.delete("report");
-          url.hash = "";
-          window.history.replaceState({}, "", url.toString());
-          window.location.reload();
-        }} />
-      </ErrorBoundary>
-    );
-  }
-
-  // ─── Unauthenticated (normal login) ──────────────────────────────────────────────────
-  if (!auth.token || !auth.user) {
-    return <LoginPage onLogin={handleLogin} />;
-  }
-
-  // ─── Citizen / Public Portal (citizen + org_user roles) ─────────────────
-  const isCitizenRole = auth.user.role === "citizen" || auth.user.role === "org_user";
-  if (isCitizenRole) {
-    return (
-      <ErrorBoundary>
-        <PublicPortal
-          user={auth.user}
-          token={auth.token}
-          onLogout={handleLogout}
-          onIncidentAdded={handleIncidentAdded}
-        />
-      </ErrorBoundary>
-    );
-  }
-
-  // ─── Loading splash ────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="min-h-screen bg-[#05080F] hero-globe flex flex-col items-center justify-center relative">
@@ -400,66 +472,181 @@ export default function App() {
       )
     : incidents;
 
+
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-[#05080F] text-slate-100 flex flex-col selection:bg-[#FFD600]/30 selection:text-[#FFD600]">
 
-        {/* ── TOP NAV (AngelOne style) ──────────────────────────────────────── */}
-        <header className="sticky top-0 z-50 border-b border-white/5 bg-[#05080F]/90 backdrop-blur-xl">
-          <div className="max-w-[1600px] mx-auto flex items-center gap-6 px-6 h-[62px]">
+        {/* ── TOP NAV ───────────────────────────────────────────────────────── */}
+        <header className="sticky top-0 z-50 border-b border-white/5 bg-[#05080F]/95 backdrop-blur-xl">
+
+          {/* ── Quick-Action Toolbar (item 8) ── */}
+          <div className="border-b border-white/4 bg-[#05080F] px-6 py-1.5">
+            <div className="max-w-[1600px] mx-auto flex items-center gap-3 flex-wrap">
+              {/* Coat of Arms + Republic label (items 4) */}
+              <div className="flex items-center gap-2 mr-2">
+                <img src="/coat_of_arms.jpg" alt="Malawi Coat of Arms" className="w-6 h-6 object-contain" />
+                <div>
+                  <div className="text-[7px] font-mono text-slate-600 uppercase tracking-widest">Republic of Malawi</div>
+                  <div className="text-[8px] font-mono text-slate-400 font-bold leading-none">Nat. Cyber Defense</div>
+                </div>
+              </div>
+              <div className="w-px h-6 bg-white/8" />
+
+              {/* Live count pills (item 8) */}
+              {(() => {
+                const crit = incidents.filter(i => i.severity === "Critical" && !["Resolved","Closed"].includes(i.status)).length;
+                const act  = incidents.filter(i => i.severity === "High"     && !["Resolved","Closed"].includes(i.status)).length;
+                const mon  = incidents.filter(i => i.severity === "Medium"   && !["Resolved","Closed"].includes(i.status)).length;
+                return (
+                  <div className="flex items-center gap-2">
+                    {crit > 0 && (
+                      <button onClick={() => setActiveTab("portal" as TabId)} className="qa-pill bg-red-500/15 border-red-500/30 text-red-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                        {crit} Critical
+                      </button>
+                    )}
+                    {act > 0 && (
+                      <button onClick={() => setActiveTab("portal" as TabId)} className="qa-pill bg-orange-500/15 border-orange-500/30 text-orange-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                        {act} Active
+                      </button>
+                    )}
+                    {mon > 0 && (
+                      <button onClick={() => setActiveTab("portal" as TabId)} className="qa-pill bg-yellow-500/15 border-yellow-500/30 text-yellow-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
+                        {mon} Monitoring
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+
+              <div className="ml-auto flex items-center gap-2">
+                {/* MACRA Hotline quick-call */}
+                <a
+                  href="tel:+2650999101"
+                  className="qa-pill bg-purple-500/10 border-purple-500/30 text-purple-400 hover:bg-purple-500/20 no-underline"
+                  title="MACRA Hotline"
+                >
+                  📞 MACRA Hotline
+                </a>
+                {/* Escalate L1 */}
+                <button
+                  onClick={() => { setActiveTab("situation" as TabId); }}
+                  className="qa-pill bg-red-500/15 border-red-500/40 text-red-400 font-bold"
+                  title="Escalate to L1"
+                >
+                  🛡️ Escalate L1
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Main nav row ── */}
+          <div className="max-w-[1600px] mx-auto flex items-center gap-4 px-6 h-[54px]">
 
             {/* Logo */}
-            <LitSecureWordmark size="sm" showSubtitle={false} className="shrink-0 mr-4" />
+            <LitSecureWordmark size="sm" showSubtitle={false} className="shrink-0 mr-2" />
 
-            {/* ── Tabs — role-filtered horizontal scroll nav ── */}
+            {/* ── Tabs with hover-reveal submenus (item 3) ── */}
             <nav className="tab-nav-scroll">
               {visibleTabs.map(tab => {
                 const Icon = tab.icon;
                 const active = activeTab === tab.id;
+
+                // Define submenu items per tab
+                const submenus: Record<string, { label: string; emoji: string; action: () => void }[]> = {
+                  portal: [
+                    { label: `New Cases (${incidents.filter(i=>i.status==="Reported").length})`, emoji: "🆕", action: () => setActiveTab("portal" as TabId) },
+                    { label: "Assigned",  emoji: "👤", action: () => setActiveTab("portal" as TabId) },
+                    { label: "Escalated", emoji: "🚨", action: () => setActiveTab("portal" as TabId) },
+                    { label: "Resolved",  emoji: "✅", action: () => setActiveTab("portal" as TabId) },
+                  ],
+                  situation: [
+                    { label: `L1 Critical (${incidents.filter(i=>i.severity==="Critical").length})`, emoji: "🔴", action: () => setActiveTab("situation" as TabId) },
+                    { label: `L2 Active (${incidents.filter(i=>i.severity==="High").length})`,    emoji: "🟠", action: () => setActiveTab("situation" as TabId) },
+                    { label: `L3 Monitoring (${incidents.filter(i=>i.severity==="Medium").length})`, emoji: "🟡", action: () => setActiveTab("situation" as TabId) },
+                    { label: "EOC War Room", emoji: "🎯", action: () => setActiveTab("situation" as TabId) },
+                  ],
+                  intel: [
+                    { label: "IOC Extractor",  emoji: "🔍", action: () => setActiveTab("intel" as TabId) },
+                    { label: "MITRE ATT&CK Map", emoji: "📊", action: () => setActiveTab("intel" as TabId) },
+                    { label: "AI Triage",       emoji: "🤖", action: () => setActiveTab("intel" as TabId) },
+                    { label: "Trend Analysis",  emoji: "📈", action: () => setActiveTab("analytics" as TabId) },
+                  ],
+                  analytics: [
+                    { label: "Real-time", emoji: "⚡", action: () => setActiveTab("analytics" as TabId) },
+                    { label: "Weekly",    emoji: "📅", action: () => setActiveTab("analytics" as TabId) },
+                    { label: "Monthly",   emoji: "🗓",  action: () => setActiveTab("analytics" as TabId) },
+                    { label: "Year-over-Year", emoji: "📊", action: () => setActiveTab("analytics" as TabId) },
+                  ],
+                  campaigns: [
+                    { label: "All Campaigns",  emoji: "🗂", action: () => setActiveTab("campaigns" as TabId) },
+                    { label: "Phishing",       emoji: "🎣", action: () => setActiveTab("campaigns" as TabId) },
+                    { label: "SIM Swap",       emoji: "📱", action: () => setActiveTab("campaigns" as TabId) },
+                    { label: "Ransomware",     emoji: "🔒", action: () => setActiveTab("campaigns" as TabId) },
+                  ],
+                };
+
+                const items = (submenus as any)[tab.id];
+
                 return (
-                  <button
-                    key={tab.id}
-                    id={`tab-btn-${tab.id}`}
-                    onClick={() => setActiveTab(tab.id as TabId)}
-                    className={`relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded transition whitespace-nowrap border-b-2 ${
-                      active
-                        ? "text-[#FFD600] border-[#FFD600] bg-[#FFD600]/5"
-                        : "text-slate-400 border-transparent hover:text-slate-200 hover:border-white/20"
-                    }`}
-                  >
-                    <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-[#FFD600]" : ""}`} />
-                    <span className="hidden lg:block">{tab.label}</span>
-                    <span className="lg:hidden">{tab.short}</span>
-                    {(tab as any).badge && (
-                      <span className="ml-0.5 text-[8px] font-bold bg-[#FFD600] text-[#05080F] px-1.5 py-0.5 rounded-full leading-none">{(tab as any).badge}</span>
+                  <div key={tab.id} className="tab-hover-group">
+                    <button
+                      id={`tab-btn-${tab.id}`}
+                      onClick={() => setActiveTab(tab.id as TabId)}
+                      className={`relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded transition whitespace-nowrap border-b-2 ${
+                        active
+                          ? "text-[#FFD600] border-[#FFD600] bg-[#FFD600]/5"
+                          : "text-slate-400 border-transparent hover:text-slate-200 hover:border-white/20"
+                      }`}
+                    >
+                      <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-[#FFD600]" : ""}`} />
+                      <span className="hidden lg:block">{tab.label}</span>
+                      <span className="lg:hidden">{tab.short}</span>
+                      {(tab as any).badge && (
+                        <span className="ml-0.5 text-[8px] font-bold bg-[#FFD600] text-[#05080F] px-1.5 py-0.5 rounded-full leading-none">{(tab as any).badge}</span>
+                      )}
+                      {items && <span className="ml-0.5 text-slate-600 text-[8px]">▾</span>}
+                    </button>
+
+                    {/* Hover submenu (item 3) */}
+                    {items && (
+                      <div className="tab-submenu">
+                        {items.map((item: any, i: number) => (
+                          <div key={i}>
+                            {item.divider
+                              ? <div className="tab-submenu-divider" />
+                              : (
+                                <div
+                                  className="tab-submenu-item"
+                                  onClick={item.action}
+                                >
+                                  <span>{item.emoji}</span>
+                                  <span>{item.label}</span>
+                                </div>
+                              )
+                            }
+                          </div>
+                        ))}
+                      </div>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </nav>
 
             {/* ── Right section ── */}
             <div className="flex items-center gap-3 shrink-0 ml-2">
-              {/* Command Palette trigger */}
               <CommandPalette
                 onNavigate={(tabId) => setActiveTab(tabId as TabId)}
                 allowedTabIds={visibleTabs.map(t => t.id)}
               />
-              {/* Gemini AI status badge */}
               <div className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded border border-purple-500/30 bg-purple-500/5">
                 <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
                 <span className="text-purple-400 text-[9px] font-mono font-bold">GEMINI</span>
               </div>
-
-              {/* Threat index */}
-              <div className="hidden md:flex items-center gap-1.5 text-[11px] font-mono">
-                <AlertTriangle className={`w-3 h-3 ${incidents.some(i => i.severity === 'Critical' || i.severity === 'critical') ? 'text-red-400 animate-pulse' : 'text-orange-400'}`} />
-                <span className={`font-bold ${incidents.some(i => i.severity === 'Critical' || i.severity === 'critical') ? 'text-red-400' : 'text-orange-400'}`}>
-                  {incidents.some(i => i.severity === 'Critical' || i.severity === 'critical') ? 'CRITICAL' : 'ELEVATED'}
-                </span>
-              </div>
-
-              {/* High-contrast toggle */}
               <button
                 onClick={() => setHighContrast(p => !p)}
                 title="Toggle high-contrast mode"
@@ -467,10 +654,7 @@ export default function App() {
               >
                 <Contrast className="w-3.5 h-3.5" />
               </button>
-
               <div className="w-px h-5 bg-white/10 hidden md:block" />
-
-              {/* Refresh */}
               <button
                 onClick={() => fetchAppData(true)}
                 disabled={refreshing}
@@ -479,18 +663,12 @@ export default function App() {
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin text-[#FFD600]" : ""}`} />
               </button>
-
-              {/* Notifications */}
               <NotificationCenter onNavigate={(tab) => setActiveTab(tab as any)} />
-
-              {/* User badge */}
               <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-[10px] font-mono font-bold ${ROLE_COLORS[auth.user.role] || "text-slate-400 border-white/10"}`}>
                 <User className="w-3 h-3" />
                 <span className="hidden sm:inline">{auth.user.name.split(" ")[0]}</span>
                 <span className="opacity-60 uppercase">({auth.user.role})</span>
               </div>
-
-              {/* Logout */}
               <button
                 onClick={handleLogout}
                 id="logout-btn"
@@ -546,9 +724,14 @@ export default function App() {
 
             {/* Hero content */}
             <div className="relative z-10 max-w-[1600px] mx-auto px-6 pt-8 pb-4">
-              <div className="inline-flex items-center gap-2 bg-[#FFD600]/10 border border-[#FFD600]/25 rounded-full px-4 py-1.5 mb-5">
-                <span className="w-2 h-2 rounded-full bg-[#FFD600] animate-pulse" />
-                <span className="text-[#FFD600] text-[10px] font-mono font-bold tracking-widest uppercase">MACRA — MACERT — MALAWI DEFENSE CYBER-CELL</span>
+              {/* Coat of Arms watermark (item 4) */}
+              <div className="absolute top-4 right-6 opacity-10 pointer-events-none">
+                <img src="/coat_of_arms.jpg" alt="" className="w-24 h-24 object-contain" />
+              </div>
+
+              {/* Agency Bar — logo badges + presence indicators (items 1, 5, 10) */}
+              <div className="mb-5">
+                <AgencyBar activeAgency={activeAgency} onAgencyChange={setActiveAgency} />
               </div>
               <h1 className="font-orbitron text-[46px] md:text-[64px] leading-none text-white mb-4 tracking-wide">
                 PROTECTING <span className="text-[#FFD600]">MALAWI'S</span><br />DIGITAL INFRASTRUCTURE
@@ -602,11 +785,17 @@ export default function App() {
         {/* ── MAIN CONTENT ─────────────────────────────────────────────────── */}
         <main className="flex-1 px-4 md:px-6 py-6">
           <div className="max-w-[1600px] mx-auto">
+            <Suspense fallback={
+              <div className="flex flex-col items-center justify-center py-32 text-slate-500 font-mono gap-3 bg-[#0A0E1A] border border-white/5 rounded-xl shadow-lg">
+                <RefreshCw className="w-8 h-8 animate-spin text-[#FFD600]" />
+                <span className="text-xs uppercase tracking-widest text-slate-400">Loading module telemetry...</span>
+              </div>
+            }>
 
-            {activeTab === "portal" && (
+              {activeTab === "portal" && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                 <div className="lg:col-span-8 space-y-6">
-                  <ReportForm onIncidentAdded={handleIncidentAdded} />
+                  <TriageWorkspace token={auth.token ?? ""} role={auth.user?.role ?? "analyst"} activeAgency={activeAgency} />
                   <PortalDashboard incidents={incidents} stats={stats || liveStats} />
                 </div>
                 <div className="lg:col-span-4 space-y-4">
@@ -762,7 +951,14 @@ export default function App() {
             {activeTab === "stix"        && <StixExportPanel />}
             {activeTab === "incidentmgr" && <IncidentReportManager token={auth.token!} role={role} />}
             {activeTab === "ailearn"    && <AiLearningPanel token={auth.token!} role={role} />}
+            {activeTab === "casemgmt"   && <CaseManagement  token={auth.token!} role={role} />}
+            {activeTab === "mitre"      && <MitreAttackNavigator />}
+            {activeTab === "soar"       && <SoarPlaybookEngine />}
+            {activeTab === "triage"     && <AiTriageEngine />}
+            {activeTab === "siem"       && <SiemCorrelation />}
+            {activeTab === "redteam"    && <RedTeamDashboard />}
 
+            </Suspense>
           </div>
         </main>
 

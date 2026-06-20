@@ -61,14 +61,16 @@ router.post("/report", publicReportLimiter, async (req: Request, res: Response) 
   if (!reporterContact || typeof reporterContact !== "string")
     return res.status(400).json({ error: "INVALID_CONTACT", message: "Please provide a contact number or email." });
 
+  const escapeHtml = (str: string) => str.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
   // ── Sanitise inputs ─────────────────────────────────────────────────────────
   const clean = {
-    title:          title.trim().substring(0, 300),
-    description:    description.trim().substring(0, 5000),
-    reporterName:   reporterName.trim().substring(0, 100),
-    reporterContact:reporterContact.trim().substring(0, 100),
-    reporterOrg:    (reporterOrg || "Public Citizen").trim().substring(0, 100),
-    sector:         (sector || "").trim().substring(0, 50),
+    title:          escapeHtml(title.trim().substring(0, 300)),
+    description:    escapeHtml(description.trim().substring(0, 5000)),
+    reporterName:   escapeHtml(reporterName.trim().substring(0, 100)),
+    reporterContact:escapeHtml(reporterContact.trim().substring(0, 100)),
+    reporterOrg:    escapeHtml((reporterOrg || "Public Citizen").trim().substring(0, 100)),
+    sector:         escapeHtml((sector || "").trim().substring(0, 50)),
     affectedUsers:  Math.max(0, parseInt(String(affectedUsers)) || 0),
     estimatedLoss:  Math.max(0, parseFloat(String(estimatedLoss)) || 0),
   };

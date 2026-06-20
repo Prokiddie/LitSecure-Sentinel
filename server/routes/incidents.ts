@@ -136,10 +136,18 @@ router.get("/:id", (req, res) => {
 
 // ─── POST /api/incidents ─────────────────────────────────────────────────────
 router.post("/", submitLimiter, validate(createIncidentSchema), async (req, res) => {
+  const escapeHtml = (str: string) => str.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  
   const { title, description, reporterName, reporterContact, reporterOrg, evidenceUrl,
           sector = "", affectedUsers = 0, estimatedLoss = 0 } = req.body;
 
-  const aiResult = await analyzeIncidentWithAI(title, description);
+  const cleanTitle = escapeHtml(title.trim().substring(0, 300));
+  const cleanDescription = escapeHtml(description.trim().substring(0, 5000));
+  const cleanReporterName = escapeHtml((reporterName || "").trim().substring(0, 100));
+  const cleanReporterContact = escapeHtml((reporterContact || "").trim().substring(0, 100));
+  const cleanReporterOrg = escapeHtml((reporterOrg || "Public Reporting Portal").trim().substring(0, 100));
+
+  const aiResult = await analyzeIncidentWithAI(cleanTitle, cleanDescription);
 
   // ── Priority scoring ────────────────────────────────────────────────────────────────
   const priorityResult = calculatePriority({
@@ -155,14 +163,14 @@ router.post("/", submitLimiter, validate(createIncidentSchema), async (req, res)
 
   const row = {
     id,
-    title,
-    description,
+    title:                  cleanTitle,
+    description:            cleanDescription,
     category: aiResult.category,
     severity: aiResult.severity,
     status: "Reported",
-    reporter_name: reporterName,
-    reporter_contact: reporterContact,
-    reporter_org: reporterOrg || "Public Reporting Portal",
+    reporter_name: cleanReporterName,
+    reporter_contact: cleanReporterContact,
+    reporter_org: cleanReporterOrg,
     incident_date: now,
     evidence_url: evidenceUrl || null,
     assigned_investigator: null,
@@ -195,13 +203,13 @@ router.post("/", submitLimiter, validate(createIncidentSchema), async (req, res)
 
   // ── Supabase dual-write (non-blocking) ──────────────────────────────────────
   const supabasePayload = {
-    id, title, description,
+    id, title: cleanTitle, description: cleanDescription,
     category:          (aiResult.category || "other").toLowerCase().replace(/\s+/g, "_"),
     severity:          aiResult.severity.toLowerCase(),
     status:            "reported",
-    reporter_name:     reporterName,
-    reporter_org:      reporterOrg || "Public Reporting Portal",
-    reporter_contact:  reporterContact || "",
+    reporter_name:     cleanReporterName,
+    reporter_org:      cleanReporterOrg,
+    reporter_contact:  cleanReporterContact,
     analysis_summary:  aiResult.analysisSummary || "",
     mitigation_advice: aiResult.mitigationAdvice || "",
     ioc_phones:        aiResult.compromisedIndicators?.phoneNumbers?.filter((p: string) => p && p !== "N/A") || [],
@@ -213,12 +221,12 @@ router.post("/", submitLimiter, validate(createIncidentSchema), async (req, res)
     updated_at:        now,
   };
   upsertIncidentToSupabase(supabasePayload).catch(() => {}); // fire-and-forget
-  insertAuditToSupabase({ id: generateId("aud"), user_name: reporterName, user_role: "External Organization", action: "Incident Reported", details: `Incident ${id} submitted`, entity_type: "incident", entity_id: id, timestamp: now }).catch(() => {});
+  insertAuditToSupabase({ id: generateId("aud"), user_name: cleanReporterName, user_role: "External Organization", action: "Incident Reported", details: `Incident ${id} submitted`, entity_type: "incident", entity_id: id, timestamp: now }).catch(() => {});
 
   queries.insertAuditLog.run({
     id: generateId("aud"),
     timestamp: now,
-    user_name: reporterName,
+    user_name: cleanReporterName,
     user_role: "External Organization",
     action: "Incident Reported",
     details: `Incident ${id} submitted. AI categorized as ${aiResult.category} (${aiResult.severity}).`,
@@ -255,7 +263,7 @@ router.post("/", submitLimiter, validate(createIncidentSchema), async (req, res)
         try {
           notifyNewIncident(
             id,
-            `⚠️ SERIAL ATTACKER: ${title} (${baseNum} seen in ${count} incidents)`,
+            `⚠️ SERIAL ATTACKER: ${cleanTitle} (${baseNum} seen in ${count} incidents)`,
             "Critical"
           );
         } catch {}
@@ -277,17 +285,35 @@ router.post("/", submitLimiter, validate(createIncidentSchema), async (req, res)
   }
 
   // Fire notification to analysts/SOC
-  try { notifyNewIncident(id, title, aiResult.severity); } catch {}
+  try { notifyNewIncident(id, cleanTitle, aiResult.severity); } catch {}
+
+  // ── WebSocket broadcast (real-time push to SOC analysts) ──────────────────
+  try {
+    const ws = getWarRoomWS();
+    if (ws) {
+      ws.broadcastNewIncident({
+        id,
+        title:          cleanTitle,
+        severity:       aiResult.severity,
+        category:       aiResult.category,
+        priorityScore:  priorityResult.score,
+        priorityLevel:  priorityResult.level,
+        priorityFactors:priorityResult.factors,
+      });
+    }
+  } catch (err) {
+    console.error("[WS] Failed to broadcast new incident:", err);
+  }
 
   // ── Email alert for Critical incidents ──────────────────────────────────────
   if (aiResult.severity === "Critical" || aiResult.severity === "High") {
     sendCriticalIncidentAlert({
-      id, title,
+      id, title: cleanTitle,
       severity:     aiResult.severity,
       category:     aiResult.category,
-      reporterName: reporterName,
-      reporterOrg:  reporterOrg || "Public Portal",
-      description,
+      reporterName: cleanReporterName,
+      reporterOrg:  cleanReporterOrg,
+      description:  cleanDescription,
       mitigation:   aiResult.mitigationAdvice || "",
     }).catch(() => {}); // non-blocking
   }
