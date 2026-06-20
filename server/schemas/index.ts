@@ -188,4 +188,29 @@ export const vlanSimulateSchema = z.object({
   ]),
 });
 
+// ─── Profile Management Schemas ─────────────────────────────────────────────
+
+export const updateProfileSchema = z.object({
+  fullName: z.string().min(2, "Full name must be at least 2 characters").max(150),
+  phone: z.string().max(20).optional().or(z.literal("")),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z.string().min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Must contain at least one lowercase letter")
+    .regex(/\d/, "Must contain at least one number"),
+});
+
+export const confirmMfaSchema = z.object({
+  token: z.string().length(6, "Code must be exactly 6 digits").regex(/^\d+$/, "Code must contain only digits"),
+});
+
+export const disableMfaSchema = z.object({
+  password: z.string().min(1, "Password is required"),
+  token: z.string().length(6, "Code must be exactly 6 digits").regex(/^\d+$/, "Code must contain only digits"),
+});
+
+
 

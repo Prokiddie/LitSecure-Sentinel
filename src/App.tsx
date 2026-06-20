@@ -65,9 +65,11 @@ const SoarPlaybookEngine = lazy(() => import("./components/SoarPlaybookEngine"))
 const AiTriageEngine = lazy(() => import("./components/AiTriageEngine"));
 const SiemCorrelation = lazy(() => import("./components/SiemCorrelation"));
 const RedTeamDashboard = lazy(() => import("./components/RedTeamDashboard"));
+const UserProfile = lazy(() => import("./components/UserProfile"));
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
-interface AuthUser { id: string; email: string; name: string; role: string; }
+interface AuthUser { id: string; email: string; name: string; role: string; phone?: string; mfa_enabled?: boolean; }
+
 
 function getStoredAuth(): { token: string | null; user: AuthUser | null } {
   const token = sessionStorage.getItem("sentinel_token");
@@ -122,6 +124,7 @@ const TABS = [
   { id: "triage",     icon: Brain,        label: "AI Triage Engine",           short: "AI Triage",  allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst"],               badge: "AI" },
   { id: "siem",       icon: Database,     label: "SIEM Correlation",           short: "SIEM",       allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"],        badge: "NEW" },
   { id: "redteam",    icon: Crosshair,    label: "Red Team Engine",             short: "Red Team",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"],        badge: "🔴" },
+  { id: "profile",    icon: User,         label: "User Profile",               short: "Profile",    allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator","auditor","org_user"] },
 ] as const;
 type TabId = typeof TABS[number]["id"];
 
@@ -273,6 +276,11 @@ export default function App() {
     setAuth({ token: null, user: null });
   };
 
+  const handleUpdateUser = (updatedUser: AuthUser) => {
+    sessionStorage.setItem("sentinel_user", JSON.stringify(updatedUser));
+    setAuth(prev => ({ ...prev, user: updatedUser }));
+  };
+
   // Pre-login Public Citizen Portal (?report=1 or #/report in URL)
   const isPublicReportURL =
     window.location.search.includes("report=1") ||
@@ -329,12 +337,12 @@ export default function App() {
 
   return (
     <WarRoomWSProvider>
-      <AppContent auth={auth} onLogout={handleLogout} />
+      <AppContent auth={auth} onLogout={handleLogout} onUpdateUser={handleUpdateUser} />
     </WarRoomWSProvider>
   );
 }
 
-function AppContent({ auth, onLogout }: { auth: { token: string; user: AuthUser }; onLogout: () => void }) {
+function AppContent({ auth, onLogout, onUpdateUser }: { auth: { token: string; user: AuthUser }; onLogout: () => void; onUpdateUser: (user: AuthUser) => void }) {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [stats, setStats]         = useState<NationalStats | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("portal");
@@ -664,11 +672,15 @@ function AppContent({ auth, onLogout }: { auth: { token: string; user: AuthUser 
                 <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin text-[#FFD600]" : ""}`} />
               </button>
               <NotificationCenter onNavigate={(tab) => setActiveTab(tab as any)} />
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-[10px] font-mono font-bold ${ROLE_COLORS[auth.user.role] || "text-slate-400 border-white/10"}`}>
+              <button
+                onClick={() => setActiveTab("profile")}
+                title="View user profile"
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-[10px] font-mono font-bold hover:bg-white/5 cursor-pointer transition ${ROLE_COLORS[auth.user.role] || "text-slate-400 border-white/10"}`}
+              >
                 <User className="w-3 h-3" />
                 <span className="hidden sm:inline">{auth.user.name.split(" ")[0]}</span>
                 <span className="opacity-60 uppercase">({auth.user.role})</span>
-              </div>
+              </button>
               <button
                 onClick={handleLogout}
                 id="logout-btn"
@@ -957,6 +969,8 @@ function AppContent({ auth, onLogout }: { auth: { token: string; user: AuthUser 
             {activeTab === "triage"     && <AiTriageEngine />}
             {activeTab === "siem"       && <SiemCorrelation />}
             {activeTab === "redteam"    && <RedTeamDashboard />}
+            {activeTab === "profile"    && <UserProfile token={auth.token!} user={auth.user} onUpdateUser={onUpdateUser} />}
+
 
             </Suspense>
           </div>

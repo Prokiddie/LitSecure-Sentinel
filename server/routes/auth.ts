@@ -13,11 +13,12 @@ import crypto from "crypto";
 import { db, queries, generateId } from "../db/index.js";
 import { getUserFromSupabase, isSupabaseEnabled } from "../db/supabase-client.js";
 import { signAccessToken, verifyAccessToken, signRefreshToken, verifyRefreshToken, hashToken } from "../services/tokenService.js";
-import { verifyMfaToken, isMfaEnabled } from "../services/mfa.js";
+import { verifyMfaToken, isMfaEnabled, setupMfa, confirmMfa, disableMfa } from "../services/mfa.js";
 import { validate } from "../middleware/validate.js";
 import { authLimiter } from "../middleware/rateLimiter.js";
-import { loginSchema } from "../schemas/index.js";
+import { loginSchema, updateProfileSchema, changePasswordSchema, confirmMfaSchema, disableMfaSchema } from "../schemas/index.js";
 import { requireAuth } from "../middleware/auth.js";
+
 
 const router = Router();
 
@@ -344,6 +345,127 @@ router.post("/refresh", async (req, res) => {
 });
 
 // ─── GET /api/auth/me ─────────────────────────────────────────────────────────
+// ─── PUT /api/auth/profile ───────────────────────────────────────────────────
+router.put("/profile", requireAuth, validate(updateProfileSchema), (req, res) => {
+  const { fullName, phone } = req.body;
+  try {
+    db.prepare("UPDATE users SET full_name = ?, phone = ?, updated_at = ? WHERE id = ?")
+      .run(fullName, phone || "", new Date().toISOString(), req.user!.id);
+
+    const updated = db.prepare("SELECT id, full_name, email, role, phone, mfa_enabled FROM users WHERE id = ?")
+      .get(req.user!.id) as any;
+
+    if (!updated) {
+      return res.status(404).json({ error: "USER_NOT_FOUND", message: "User profile not found." });
+    }
+
+    return res.json({
+      success: true,
+      user: {
+        id: updated.id,
+        email: updated.email,
+        name: updated.full_name,
+        role: updated.role,
+        phone: updated.phone,
+        mfa_enabled: !!updated.mfa_enabled,
+      }
+    });
+  } catch (err: any) {
+    console.error("[Profile Update] DB error:", err.message);
+    return res.status(500).json({ error: "SERVER_ERROR", message: "Failed to update profile." });
+  }
+});
+
+// ─── POST /api/auth/profile/password ──────────────────────────────────────────
+router.post("/profile/password", requireAuth, validate(changePasswordSchema), (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  try {
+    const user = db.prepare("SELECT password_hash FROM users WHERE id = ?").get(req.user!.id) as any;
+    if (!user) {
+      return res.status(404).json({ error: "USER_NOT_FOUND", message: "User not found." });
+    }
+
+    const valid = bcrypt.compareSync(currentPassword, user.password_hash);
+    if (!valid) {
+      return res.status(401).json({ error: "INVALID_CREDENTIALS", message: "Current password does not match." });
+    }
+
+    const hash = bcrypt.hashSync(newPassword, 12);
+    db.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?")
+      .run(hash, new Date().toISOString(), req.user!.id);
+
+    return res.json({ success: true, message: "Password updated successfully." });
+  } catch (err: any) {
+    console.error("[Password Update] error:", err.message);
+    return res.status(500).json({ error: "SERVER_ERROR", message: "Failed to update password." });
+  }
+});
+
+// ─── POST /api/auth/profile/mfa/setup ─────────────────────────────────────────
+router.post("/profile/mfa/setup", requireAuth, async (req, res) => {
+  try {
+    const user = db.prepare("SELECT email, mfa_enabled FROM users WHERE id = ?").get(req.user!.id) as any;
+    if (!user) {
+      return res.status(404).json({ error: "USER_NOT_FOUND", message: "User not found." });
+    }
+
+    if (user.mfa_enabled) {
+      return res.status(400).json({ error: "MFA_ALREADY_ENABLED", message: "MFA is already enabled on this account." });
+    }
+
+    const mfaData = await setupMfa(req.user!.id, user.email);
+    return res.json({
+      success: true,
+      qrDataUrl: mfaData.qrDataUrl,
+      manualKey: mfaData.manualKey,
+    });
+  } catch (err: any) {
+    console.error("[MFA Setup] error:", err.message);
+    return res.status(500).json({ error: "SERVER_ERROR", message: "Failed to generate MFA credentials." });
+  }
+});
+
+// ─── POST /api/auth/profile/mfa/confirm ───────────────────────────────────────
+router.post("/profile/mfa/confirm", requireAuth, validate(confirmMfaSchema), (req, res) => {
+  const { token } = req.body;
+  try {
+    const confirmed = confirmMfa(req.user!.id, token);
+    if (!confirmed) {
+      return res.status(400).json({ error: "INVALID_MFA_TOKEN", message: "Invalid verification code. Setup not confirmed." });
+    }
+    return res.json({ success: true, message: "Multi-Factor Authentication enabled successfully." });
+  } catch (err: any) {
+    console.error("[MFA Confirm] error:", err.message);
+    return res.status(500).json({ error: "SERVER_ERROR", message: "Failed to confirm MFA setup." });
+  }
+});
+
+// ─── POST /api/auth/profile/mfa/disable ───────────────────────────────────────
+router.post("/profile/mfa/disable", requireAuth, validate(disableMfaSchema), (req, res) => {
+  const { password, token } = req.body;
+  try {
+    const user = db.prepare("SELECT password_hash FROM users WHERE id = ?").get(req.user!.id) as any;
+    if (!user) {
+      return res.status(404).json({ error: "USER_NOT_FOUND", message: "User not found." });
+    }
+
+    const passwordValid = bcrypt.compareSync(password, user.password_hash);
+    if (!passwordValid) {
+      return res.status(401).json({ error: "INVALID_CREDENTIALS", message: "Incorrect password." });
+    }
+
+    const disabled = disableMfa(req.user!.id, token);
+    if (!disabled) {
+      return res.status(400).json({ error: "INVALID_MFA_TOKEN", message: "Invalid verification code." });
+    }
+
+    return res.json({ success: true, message: "Multi-Factor Authentication disabled successfully." });
+  } catch (err: any) {
+    console.error("[MFA Disable] error:", err.message);
+    return res.status(500).json({ error: "SERVER_ERROR", message: "Failed to disable MFA." });
+  }
+});
+
 router.get("/me", requireAuth, (req, res) => {
   const user = db.prepare("SELECT id, full_name, email, role, phone, mfa_enabled, last_login FROM users WHERE id = ?")
     .get(req.user!.id) as any;
