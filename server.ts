@@ -12,6 +12,7 @@ import { createServer as createViteServer } from "vite";
 import helmet from "helmet";
 import cors from "cors";
 import { initWarRoomWS } from "./server/websocket/warroom.js";
+import { initNotificationsWS } from "./server/websocket/notifications.js";
 
 
 // ─── DB Init & Seed ───────────────────────────────────────────────────────────
@@ -283,6 +284,7 @@ async function startServer() {
   // ─── Attach WebSocket server to the same HTTP port ─────────────────────────
   const httpServer = http.createServer(app);
   initWarRoomWS(httpServer);
+  initNotificationsWS(httpServer);
 
   httpServer.listen(PORT, () => {
     console.log(`\n🛡️  LitSecure Sentinel API — PORT ${PORT}`);

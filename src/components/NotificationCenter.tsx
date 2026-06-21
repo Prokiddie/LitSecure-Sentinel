@@ -1,8 +1,8 @@
 /**
  * LitSecure Sentinel — Notification Center v2
  *
- * Real-time notifications via Server-Sent Events (SSE).
- * Falls back to polling every 30s if SSE connection drops.
+ * Real-time notifications via authenticated WebSocket connections.
+ * Falls back to polling every 30s if WebSocket connection drops.
  * Fires native browser push notifications for critical/high priority items.
  * Supports all new event types: EDR, social, SIM swap, IOCs, public reports, KB.
  */
@@ -124,10 +124,10 @@ export default function NotificationCenter({ onNavigate }: Props) {
   const [notifs,       setNotifs]       = useState<Notification[]>([]);
   const [unread,       setUnread]       = useState(0);
   const [filter,       setFilter]       = useState<"all" | "unread">("unread");
-  const [sseStatus,    setSseStatus]    = useState<"connecting" | "live" | "polling">("connecting");
+  const [wsStatus,     setWsStatus]     = useState<"connecting" | "live" | "polling">("connecting");
   const [newFlash,     setNewFlash]     = useState(false); // brief flash on new notif
   const dropRef      = useRef<HTMLDivElement>(null);
-  const sseRef       = useRef<EventSource | null>(null);
+  const wsRef        = useRef<WebSocket | null>(null);
   const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const token = () => sessionStorage.getItem("sentinel_token");
@@ -145,7 +145,7 @@ export default function NotificationCenter({ onNavigate }: Props) {
     } catch {}
   }, []);
 
-  // ─── Handle incoming SSE notification ──────────────────────────────────────
+  // ─── Handle incoming notification ──────────────────────────────────────────
   const handleIncoming = useCallback((data: any) => {
     // __type: "initial" means the server is sending the backlog on connect
     if (data.__type === "initial") {
@@ -174,61 +174,89 @@ export default function NotificationCenter({ onNavigate }: Props) {
     browserPush(notif.title, notif.message, notif.priority);
   }, []);
 
-  // ─── SSE connection ─────────────────────────────────────────────────────────
-  const connectSSE = useCallback(async () => {
+  // ─── WebSocket connection ───────────────────────────────────────────────────
+  const connectWS = useCallback(async () => {
     if (!token()) return;
-    if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
+    if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
 
-    // Preflight: EventSource can't read HTTP status, so check auth first
+    setWsStatus("connecting");
+
     try {
-      const check = await fetch(`/api/notifications?_preflight=1`, {
+      // 1. Get short-lived stream token
+      const handshakeRes = await fetch("/api/notifications/handshake", {
+        method: "POST",
         headers: { Authorization: `Bearer ${token()}` },
       });
-      if (check.status === 401 || check.status === 403) {
-        // Auth error — fall back to polling, don't retry SSE until user re-logs in
-        setSseStatus("polling");
-        if (!pollRef.current) pollRef.current = setInterval(fetchAll, 30000);
-        return;
+
+      if (!handshakeRes.ok) {
+        if (handshakeRes.status === 401 || handshakeRes.status === 403) {
+          // Auth error — fall back to polling, don't retry WS until user re-logs in
+          setWsStatus("polling");
+          if (!pollRef.current) pollRef.current = setInterval(fetchAll, 30000);
+          return;
+        }
+        throw new Error("Handshake request failed");
       }
-    } catch {
-      // Network error — proceed anyway, SSE onerror will handle it
-    }
 
-    setSseStatus("connecting");
-    const es = new EventSource(`/api/notifications/stream?token=${encodeURIComponent(token()!)}`);
-    sseRef.current = es;
+      const { streamToken } = await handshakeRes.json();
 
-    es.onopen = () => {
-      setSseStatus("live");
-      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-    };
+      // 2. Open WebSocket connection
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${protocol}//${window.location.host}/ws/notifications?token=${encodeURIComponent(streamToken)}`;
+      
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
 
-    es.onmessage = (ev) => {
-      try { handleIncoming(JSON.parse(ev.data)); } catch {}
-    };
+      ws.onopen = () => {
+        setWsStatus("live");
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      };
 
-    es.onerror = () => {
-      es.close();
-      sseRef.current = null;
-      setSseStatus("polling");
-      // Fall back to 30s polling
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === "INITIAL_NOTIFICATIONS") {
+            handleIncoming({ __type: "initial", items: msg.items });
+          } else if (msg.type === "NOTIFICATION") {
+            handleIncoming(msg.payload);
+          }
+        } catch (err) {
+          console.error("Failed to parse WebSocket message:", err);
+        }
+      };
+
+      ws.onclose = () => {
+        wsRef.current = null;
+        setWsStatus("polling");
+        // Fall back to 30s polling
+        if (!pollRef.current) {
+          pollRef.current = setInterval(fetchAll, 30000);
+        }
+        // Retry WS connection after 15s
+        setTimeout(connectWS, 15000);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+    } catch (err) {
+      setWsStatus("polling");
       if (!pollRef.current) {
         pollRef.current = setInterval(fetchAll, 30000);
       }
-      // Retry SSE after 15s (network error, not auth error)
-      setTimeout(connectSSE, 15000);
-    };
+      setTimeout(connectWS, 15000);
+    }
   }, [fetchAll, handleIncoming]);
 
 
   // ─── Init ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     fetchAll();           // immediate fetch
-    connectSSE();         // open SSE
+    connectWS();          // open WebSocket connection
     requestPushPermission().catch(() => {}); // ask for browser push
 
     return () => {
-      sseRef.current?.close();
+      wsRef.current?.close();
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
@@ -303,19 +331,19 @@ export default function NotificationCenter({ onNavigate }: Props) {
               )}
             </div>
             <div className="flex items-center gap-2">
-              {/* SSE status indicator */}
+              {/* WS status indicator */}
               <span className={`flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded border ${
-                sseStatus === "live"
+                wsStatus === "live"
                   ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
-                  : sseStatus === "polling"
+                  : wsStatus === "polling"
                   ? "text-yellow-400 border-yellow-500/30 bg-yellow-500/10"
                   : "text-slate-500 border-white/10"
               }`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${
-                  sseStatus === "live" ? "bg-emerald-400 animate-pulse" :
-                  sseStatus === "polling" ? "bg-yellow-400" : "bg-slate-500 animate-pulse"
+                  wsStatus === "live" ? "bg-emerald-400 animate-pulse" :
+                  wsStatus === "polling" ? "bg-yellow-400" : "bg-slate-500 animate-pulse"
                 }`} />
-                {sseStatus === "live" ? "LIVE" : sseStatus === "polling" ? "POLLING" : "…"}
+                {wsStatus === "live" ? "LIVE" : wsStatus === "polling" ? "POLLING" : "…"}
               </span>
               <button onClick={fetchAll} title="Refresh" className="text-slate-500 hover:text-slate-300 transition">
                 <RefreshCw className="w-3.5 h-3.5" />
@@ -369,7 +397,7 @@ export default function NotificationCenter({ onNavigate }: Props) {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                            <span className="text-xs font-bold text-white truncate">{n.title}</span>
+                             <span className="text-xs font-bold text-white truncate">{n.title}</span>
                             {unread && (
                               <span className={`text-[8px] font-bold font-mono px-1 py-0.5 rounded border uppercase ${PRIORITY_BADGE[n.priority]}`}>
                                 {n.priority}
@@ -399,7 +427,7 @@ export default function NotificationCenter({ onNavigate }: Props) {
           {/* Footer */}
           <div className="border-t border-white/8 px-4 py-2.5 shrink-0 flex items-center justify-between">
             <p className="text-[9px] text-slate-600 font-mono">
-              {sseStatus === "live" ? "Real-time · SSE connected" : "Polling every 30s"}
+              {wsStatus === "live" ? "Real-time · WS connected" : "Polling every 30s"}
             </p>
             <p className="text-[9px] text-slate-700 font-mono">{notifs.length} total</p>
           </div>

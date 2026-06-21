@@ -1,6 +1,54 @@
 version: "3.9"
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: litsecure-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Nolankachimanga@2025
+      POSTGRES_DB: litsecure
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d litsecure"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: litsecure-pgbouncer
+    restart: unless-stopped
+    ports:
+      - "6432:6432"
+    environment:
+      - DATABASE_URL=postgres://postgres:Nolankachimanga@2025@postgres:5432/litsecure
+      - LISTENING_PORT=6432
+      - MAX_CLIENT_CONN=100
+      - DEFAULT_POOL_SIZE=20
+      - POOL_MODE=transaction
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  clamav:
+    image: clamav/clamav:latest
+    container_name: litsecure-clamav
+    restart: unless-stopped
+    ports:
+      - "3310:3310"
+    volumes:
+      - clamav_defs:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "3310"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
   sentinel:
     build: .
     container_name: litsecure-sentinel
@@ -8,15 +56,21 @@ services:
     ports:
       - "${PORT:-3000}:3000"
     env_file:
-      - .env.local          # Load all secrets from .env.local (never hardcode in compose)
+      - .env.local
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - DATABASE_URL=postgres://postgres:Nolankachimanga@2025@postgres:5432/litsecure
+      - CLAMAV_HOST=clamav
+      - CLAMAV_PORT=3310
     volumes:
-      # SQLite fallback persistence (remove once fully on PostgreSQL)
       - sentinel_data:/app/data
-      # Uploaded evidence files
       - sentinel_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health/live"]
       interval: 30s
@@ -28,21 +82,19 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 512M
-        reservations:
-          memory: 128M
     security_opt:
       - no-new-privileges:true
-    read_only: false           # Set to true once data/uploads are on named volumes
+    read_only: false
     tmpfs:
       - /tmp
 
 volumes:
+  postgres_data:
+    driver: local
+  clamav_defs:
+    driver: local
   sentinel_data:
     driver: local
   sentinel_uploads:
     driver: local
+

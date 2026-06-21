@@ -110,6 +110,9 @@ CREATE TABLE IF NOT EXISTS incidents (
   estimated_loss          REAL DEFAULT 0,
   sector                  TEXT,
   campaign_id             TEXT,
+  reporter_email          TEXT,
+  physical_addresses      TEXT,
+  witness_details         TEXT,
   created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -147,18 +150,17 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_entity    ON audit_logs(entity_type, e
 
 -- ── Notifications ────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS notifications (
-  id         TEXT PRIMARY KEY,
-  type       TEXT NOT NULL,
-  priority   TEXT NOT NULL CHECK(priority IN ('low','medium','high','critical')),
-  title      TEXT NOT NULL,
-  message    TEXT NOT NULL,
-  link       TEXT,
-  entity_id  TEXT,
-  roles      JSONB NOT NULL DEFAULT '[]',
-  is_read    INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  id           TEXT PRIMARY KEY,
+  type         TEXT NOT NULL,
+  priority     TEXT NOT NULL CHECK(priority IN ('low','medium','high','critical')),
+  title        TEXT NOT NULL,
+  message      TEXT NOT NULL,
+  link         TEXT,
+  entity_id    TEXT,
+  target_roles TEXT NOT NULL DEFAULT '["admin","analyst","soc_manager","investigator","auditor","gov_admin"]',
+  is_read      INTEGER NOT NULL DEFAULT 0,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_notifications_roles   ON notifications USING gin(roles);
 CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC);
 
 -- ── Threat Intelligence ──────────────────────────────────────
@@ -261,8 +263,3 @@ CREATE TABLE IF NOT EXISTS quarantine_log (
   status         TEXT DEFAULT 'QUARANTINED',
   quarantined_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
--- ── Row Level Security (RLS) — recommended for multi-tenant ──
--- Enable on tables that need tenant isolation when ready:
--- ALTER TABLE incidents ENABLE ROW LEVEL SECURITY;
--- CREATE POLICY tenant_incidents ON incidents USING (organization_id = current_setting('app.org_id'));

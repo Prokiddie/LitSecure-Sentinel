@@ -54,4 +54,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
 
 # Use dumb-init to handle SIGTERM correctly (graceful shutdown)
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "dist/server.cjs"]
+CMD ["node", "dist/server.js"]

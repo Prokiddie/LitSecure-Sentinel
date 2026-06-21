@@ -33,3 +33,21 @@ export function verifyRefreshToken(token: string): { userId: string } {
 export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
+
+// ─── Single-use stream tokens for WebSocket Handshake ───────────────────────
+const streamTokens = new Map<string, { userId: string; id: string; role: string; email: string; name: string; expiresAt: number }>();
+
+export function generateStreamToken(payload: TokenPayload): string {
+  const token = crypto.randomBytes(32).toString("hex");
+  const expiresAt = Date.now() + 30000; // 30 seconds
+  streamTokens.set(token, { ...payload, expiresAt });
+  return token;
+}
+
+export function verifyStreamToken(token: string): { userId: string; id: string; role: string; email: string; name: string } | null {
+  const data = streamTokens.get(token);
+  if (!data) return null;
+  streamTokens.delete(token); // single-use!
+  if (Date.now() > data.expiresAt) return null; // expired
+  return data;
+}

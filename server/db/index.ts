@@ -104,7 +104,10 @@ db.exec(`
     analysis_summary       TEXT NOT NULL DEFAULT '',
     updates                TEXT NOT NULL DEFAULT '[]',
     created_at             TEXT NOT NULL,
-    updated_at             TEXT NOT NULL
+    updated_at             TEXT NOT NULL,
+    reporter_email         TEXT,
+    physical_addresses     TEXT,
+    witness_details        TEXT
   );
 
   CREATE TABLE IF NOT EXISTS incident_evidence (
@@ -381,6 +384,9 @@ _migrate("ALTER TABLE incidents ADD COLUMN estimated_loss  INTEGER NOT NULL DEFA
 _migrate("ALTER TABLE incidents ADD COLUMN sector          TEXT    NOT NULL DEFAULT ''");
 _migrate("ALTER TABLE incidents ADD COLUMN campaign_id     TEXT");
 _migrate("ALTER TABLE incidents ADD COLUMN ai_confidence   INTEGER NOT NULL DEFAULT 0");
+_migrate("ALTER TABLE incidents ADD COLUMN reporter_email         TEXT");
+_migrate("ALTER TABLE incidents ADD COLUMN physical_addresses     TEXT");
+_migrate("ALTER TABLE incidents ADD COLUMN witness_details        TEXT");
 
 // Threat Intel — enrichment fields
 _migrate("ALTER TABLE threat_intel ADD COLUMN abuse_score  INTEGER NOT NULL DEFAULT 0");
@@ -424,6 +430,7 @@ export function generateId(prefix: string = "id"): string {
 }
 
 // ─── Typed Row Mappers ────────────────────────────────────────────────────────
+import { decryptField } from "../services/encryptionService.js";
 
 export function mapIncident(row: any) {
   return {
@@ -433,8 +440,8 @@ export function mapIncident(row: any) {
     category:             row.category,
     severity:             row.severity,
     status:               row.status,
-    reporterName:         row.reporter_name,
-    reporterContact:      row.reporter_contact,
+    reporterName:         decryptField(row.reporter_name),
+    reporterContact:      decryptField(row.reporter_contact),
     reporterOrg:          row.reporter_org,
     incidentDate:         row.incident_date,
     evidenceUrl:          row.evidence_url ?? undefined,
@@ -454,6 +461,9 @@ export function mapIncident(row: any) {
     sector:          row.sector           ?? "",
     campaignId:      row.campaign_id      ?? null,
     aiConfidence:    row.ai_confidence    ?? 0,
+    reporterEmail:   decryptField(row.reporter_email),
+    physicalAddresses: decryptField(row.physical_addresses),
+    witnessDetails:  decryptField(row.witness_details),
   };
 }
 
@@ -632,42 +642,126 @@ export const queries = {
 
 export default db;
 
-// ─── PostgreSQL Pool (Supabase Direct Connection) ─────────────────────────────
-// When SUPABASE_DB_URL is set, all new server code SHOULD prefer pgPool over
-// the SQLite `db` above. The SQLite path remains as a local dev / offline fallback.
-//
-// Set in .env.local:
-//   SUPABASE_DB_URL=postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres
-//
-import pg from "pg";
-const { Pool } = pg;
+// ─── PostgreSQL Integration ───────────────────────────────────────────────────
+import {
+  pgPool as pgPoolImport,
+  executePostgresQuery,
+  translateSqlToPostgres,
+  encryptParams,
+  decryptRow
+} from "./postgres.js";
 
-export const pgPool: InstanceType<typeof Pool> | null = process.env.SUPABASE_DB_URL
-  ? new Pool({
-      connectionString: process.env.SUPABASE_DB_URL,
-      ssl: { rejectUnauthorized: false },   // Supabase requires SSL
-      max: 10,                              // max pool connections
-      idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: 5_000,
-    })
-  : null;
+export const pgPool = pgPoolImport;
 
-/** Returns true if a PostgreSQL pool is configured and reachable. */
-export async function isPgReady(): Promise<boolean> {
-  if (!pgPool) return false;
+// Cache pg readiness check
+let pgReady: boolean | null = null;
+
+export async function isPgActive(): Promise<boolean> {
+  if (pgReady !== null) return pgReady;
+  if (!pgPool) {
+    pgReady = false;
+    return false;
+  }
   try {
     const client = await pgPool.connect();
     client.release();
+    pgReady = true;
     return true;
-  } catch {
+  } catch (err) {
+    console.warn("Postgres is not reachable, using SQLite fallback. Error:", err);
+    pgReady = false;
     return false;
   }
 }
 
+/** Returns true if a PostgreSQL pool is configured and reachable. */
+export async function isPgReady(): Promise<boolean> {
+  return isPgActive();
+}
+
 /** Helper: run a parameterised query on pgPool. Throws if pgPool not configured. */
 export async function pgQuery<T = any>(sql: string, params?: any[]): Promise<T[]> {
-  if (!pgPool) throw new Error("PostgreSQL not configured. Set SUPABASE_DB_URL.");
+  if (!pgPool) throw new Error("PostgreSQL not configured. Set DATABASE_URL.");
   const { rows } = await pgPool.query(sql, params);
   return rows as T[];
+}
+
+/** Execute a query on the active database (Postgres when ready, SQLite fallback). */
+export async function executeDbQuery<T = any>(sql: string, params: any = []): Promise<T[]> {
+  const active = await isPgActive();
+  if (active) {
+    return executePostgresQuery<T>(sql, params);
+  } else {
+    // Run on SQLite with parameters, handles encryption/decryption
+    const encryptedParams = encryptParams(params);
+    const stmt = db.prepare(sql);
+    let rows: any[];
+    if (Array.isArray(encryptedParams)) {
+      rows = stmt.all(...encryptedParams);
+    } else if (encryptedParams && typeof encryptedParams === "object") {
+      rows = stmt.all(encryptedParams);
+    } else {
+      rows = stmt.all();
+    }
+    return rows.map(decryptRow) as T[];
+  }
+}
+
+export async function queryAll<T = any>(sql: string, params: any = []): Promise<T[]> {
+  return executeDbQuery<T>(sql, params);
+}
+
+export async function queryGet<T = any>(sql: string, params: any = []): Promise<T | null> {
+  const rows = await executeDbQuery<T>(sql, params);
+  return rows[0] || null;
+}
+
+export async function queryRun(sql: string, params: any = []): Promise<void> {
+  await executeDbQuery(sql, params);
+}
+
+export async function dbTransaction(fn: (query: (sql: string, params?: any) => Promise<any[]>) => Promise<void>): Promise<void> {
+  const active = await isPgActive();
+  if (active) {
+    const client = await pgPool!.connect();
+    try {
+      await client.query("BEGIN");
+      const localQuery = async (sql: string, params: any = []) => {
+        const encryptedParams = encryptParams(params);
+        const { sql: finalSql, values } = translateSqlToPostgres(sql, encryptedParams);
+        const res = await client.query(finalSql, values);
+        return res.rows.map(decryptRow);
+      };
+      await fn(localQuery);
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  } else {
+    db.exec("BEGIN");
+    try {
+      const localQuery = async (sql: string, params: any = []) => {
+        const encryptedParams = encryptParams(params);
+        const stmt = db.prepare(sql);
+        let rows: any[];
+        if (Array.isArray(encryptedParams)) {
+          rows = stmt.all(...encryptedParams);
+        } else if (encryptedParams && typeof encryptedParams === "object") {
+          rows = stmt.all(encryptedParams);
+        } else {
+          rows = stmt.all();
+        }
+        return rows.map(decryptRow);
+      };
+      await fn(localQuery);
+      db.exec("COMMIT");
+    } catch (err) {
+      db.exec("ROLLBACK");
+      throw err;
+    }
+  }
 }
 

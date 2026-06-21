@@ -13,7 +13,7 @@
  */
 import { createRequire } from "module";
 import qrcode from "qrcode";
-import { db, generateId } from "../db/index.js";
+import { queryGet, queryRun } from "../db/index.js";
 
 // otplib v13: use TOTP class directly (authenticator singleton was removed)
 const require = createRequire(import.meta.url);
@@ -35,10 +35,11 @@ export async function setupMfa(userId: string, userEmail: string): Promise<{
   const secret = totp.generateSecret(20); // 160-bit base32 secret
 
   // Store pending (not yet confirmed) setup
-  db.prepare(`
-    INSERT OR REPLACE INTO mfa_pending (user_id, secret, created_at)
-    VALUES (?, ?, ?)
-  `).run(userId, secret, new Date().toISOString());
+  await queryRun(`
+    INSERT INTO mfa_pending (user_id, secret, created_at)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (user_id) DO UPDATE SET secret = EXCLUDED.secret, created_at = EXCLUDED.created_at
+  `, [userId, secret, new Date().toISOString()]);
 
   // Generate otpauth:// URI for QR code
   const otpauthUri = totp.toURI(secret, userEmail, APP_NAME);
@@ -52,45 +53,47 @@ export async function setupMfa(userId: string, userEmail: string): Promise<{
 
 // ─── Confirm: verify first OTP and activate MFA ──────────────────────────────
 
-export function confirmMfa(userId: string, token: string): boolean {
-  const row = db.prepare("SELECT secret FROM mfa_pending WHERE user_id = ?").get(userId) as any;
+export async function confirmMfa(userId: string, token: string): Promise<boolean> {
+  const row = await queryGet("SELECT secret FROM mfa_pending WHERE user_id = $1", [userId]) as any;
   if (!row) return false; // no pending setup
 
   const valid = totp.verify({ token, secret: row.secret });
   if (!valid) return false;
 
   // Activate MFA on user account
-  db.prepare("UPDATE users SET mfa_enabled = 1, mfa_secret = ?, updated_at = ? WHERE id = ?")
-    .run(row.secret, new Date().toISOString(), userId);
+  await queryRun("UPDATE users SET mfa_enabled = 1, mfa_secret = $1, updated_at = $2 WHERE id = $3", [
+    row.secret, new Date().toISOString(), userId
+  ]);
 
   // Remove pending setup
-  db.prepare("DELETE FROM mfa_pending WHERE user_id = ?").run(userId);
+  await queryRun("DELETE FROM mfa_pending WHERE user_id = $1", [userId]);
   return true;
 }
 
 // ─── Verify: check OTP during login ──────────────────────────────────────────
 
-export function verifyMfaToken(userId: string, token: string): boolean {
-  const user = db.prepare("SELECT mfa_secret, mfa_enabled FROM users WHERE id = ?").get(userId) as any;
+export async function verifyMfaToken(userId: string, token: string): Promise<boolean> {
+  const user = await queryGet("SELECT mfa_secret, mfa_enabled FROM users WHERE id = $1", [userId]) as any;
   if (!user || !user.mfa_enabled || !user.mfa_secret) return true; // MFA not enabled → pass through
   return totp.verify({ token, secret: user.mfa_secret });
 }
 
 // ─── Check whether a user has MFA enabled ────────────────────────────────────
 
-export function isMfaEnabled(userId: string): boolean {
-  const user = db.prepare("SELECT mfa_enabled FROM users WHERE id = ?").get(userId) as any;
+export async function isMfaEnabled(userId: string): Promise<boolean> {
+  const user = await queryGet("SELECT mfa_enabled FROM users WHERE id = $1", [userId]) as any;
   return !!user?.mfa_enabled;
 }
 
 // ─── Disable MFA (requires valid OTP to prevent accidental disabling) ─────────
 
-export function disableMfa(userId: string, token: string): boolean {
-  const valid = verifyMfaToken(userId, token);
+export async function disableMfa(userId: string, token: string): Promise<boolean> {
+  const valid = await verifyMfaToken(userId, token);
   if (!valid) return false;
-  db.prepare("UPDATE users SET mfa_enabled = 0, mfa_secret = NULL, updated_at = ? WHERE id = ?")
-    .run(new Date().toISOString(), userId);
-  db.prepare("DELETE FROM mfa_pending WHERE user_id = ?").run(userId);
+  await queryRun("UPDATE users SET mfa_enabled = 0, mfa_secret = NULL, updated_at = $1 WHERE id = $2", [
+    new Date().toISOString(), userId
+  ]);
+  await queryRun("DELETE FROM mfa_pending WHERE user_id = $1", [userId]);
   return true;
 }
 

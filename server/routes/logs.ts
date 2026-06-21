@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { queries, generateId } from "../db/index.js";
+import { queryAll, queryRun, generateId } from "../db/index.js";
 
 const router = Router();
 
@@ -15,27 +15,40 @@ const EVENT_TEMPLATES = [
 ];
 
 // GET /api/logs
-router.get("/", (req, res) => {
-  return res.json(queries.getAllLogs.all());
+router.get("/", async (req, res) => {
+  try {
+    const logs = await queryAll("SELECT * FROM simulated_logs ORDER BY timestamp DESC LIMIT 50");
+    return res.json(logs);
+  } catch (err: any) {
+    return res.status(500).json({ message: err.message });
+  }
 });
 
 // POST /api/logs/generate — simulate new random log entry
-router.post("/generate", (req, res) => {
-  const src = SOURCES[Math.floor(Math.random() * SOURCES.length)];
-  const ev  = EVENT_TEMPLATES[Math.floor(Math.random() * EVENT_TEMPLATES.length)];
+router.post("/generate", async (req, res) => {
+  try {
+    const src = SOURCES[Math.floor(Math.random() * SOURCES.length)];
+    const ev  = EVENT_TEMPLATES[Math.floor(Math.random() * EVENT_TEMPLATES.length)];
 
-  const newLog = {
-    id: generateId("LOG"),
-    timestamp: new Date().toISOString(),
-    source: src,
-    event: ev.event,
-    severity: ev.severity,
-    details: `${ev.details} on local integration branch.`,
-    indicator: `${ev.indPrfx}${Math.floor(10 + Math.random() * 89)}`,
-  };
+    const newLog = {
+      id: generateId("LOG"),
+      timestamp: new Date().toISOString(),
+      source: src,
+      event: ev.event,
+      severity: ev.severity,
+      details: `${ev.details} on local integration branch.`,
+      indicator: `${ev.indPrfx}${Math.floor(10 + Math.random() * 89)}`,
+    };
 
-  queries.insertLog.run(newLog);
-  return res.status(201).json(newLog);
+    await queryRun(`
+      INSERT INTO simulated_logs (id,timestamp,source,event,severity,details,indicator)
+      VALUES (@id,@timestamp,@source,@event,@severity,@details,@indicator)
+    `, newLog);
+    
+    return res.status(201).json(newLog);
+  } catch (err: any) {
+    return res.status(500).json({ message: err.message });
+  }
 });
 
 export default router;

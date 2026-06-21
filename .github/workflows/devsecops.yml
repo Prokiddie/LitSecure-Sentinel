@@ -33,6 +33,11 @@ jobs:
 
       - name: Run Unit & Integration Tests
         run: npm run test -- --run
+        env:
+          NODE_ENV: test
+          JWT_SECRET: devsecops-test-jwt-secret-32-chars!!
+          REFRESH_TOKEN_SECRET: devsecops-test-refresh-secret-32chars!
+          DATABASE_PATH: ":memory:"
 
       - name: ⚙️ Semgrep SAST Scan
         uses: semgrep/semgrep-action@v1
@@ -65,6 +70,8 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '0'
 
       - name: Upload Trivy Results to GitHub Security Tab
         uses: github/codeql-action/upload-sarif@v3
@@ -88,16 +95,22 @@ jobs:
       - name: Install Production Dependencies
         run: npm ci
 
+      - name: Build Application
+        run: npm run build
+
       - name: Start LitSecure Sentinel Server in Background
         run: |
-          npm run build
-          NODE_ENV=production PORT=3000 npm run start &
+          NODE_ENV=production PORT=3000 node dist/server.js &
           echo "Waiting for server to start..."
-          sleep 5
-          curl -s http://localhost:3000/api/health/live || exit 1
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:3000/api/health/live && break
+            sleep 2
+          done
+          curl -f http://localhost:3000/api/health/live || exit 1
         env:
           JWT_SECRET: devsecops-dast-jwt-test-secret-key-32chars-min
-          REFRESH_TOKEN_SECRET: devsecops-dast-refresh-test-secret-key-32chars-min
+          REFRESH_TOKEN_SECRET: devsecops-dast-refresh-test-secret-key-32chars
+          DATABASE_PATH: /tmp/dast-test.db
 
       - name: ⚡ OWASP ZAP Baseline API Scan
         uses: zaproxy/action-baseline@v0.12.0

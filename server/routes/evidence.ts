@@ -4,7 +4,7 @@
  */
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { queryGet, queryAll, queryRun, generateId } from "../db/index.js";
 import { scanEvidenceBuffer } from "../services/evidenceScanner.js";
 import crypto from "crypto";
 import path from "path";
@@ -21,11 +21,9 @@ const router = Router();
 
 // ─── Helper: parse base64 upload ─────────────────────────────────────────────
 function saveBase64File(base64Data: string, fileName: string): { diskPath: string; size: number; sha256: string } {
-  // Strip data URI prefix if present
   const base64 = base64Data.replace(/^data:[^;]+;base64,/, "");
   const buffer = Buffer.from(base64, "base64");
 
-  // Sanitize filename and add timestamp
   const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
   const diskName = `${Date.now()}_${safe}`;
   const diskPath = path.join(EVIDENCE_DIR, diskName);
@@ -40,11 +38,12 @@ function saveBase64File(base64Data: string, fileName: string): { diskPath: strin
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 // GET /api/evidence/:incidentId — list evidence for an incident
-router.get("/:incidentId", requireAuth, (req, res) => {
+router.get("/:incidentId", requireAuth, async (req, res) => {
   try {
-    const rows = db.prepare(
-      "SELECT * FROM incident_evidence WHERE incident_id = ? ORDER BY uploaded_at DESC"
-    ).all(req.params.incidentId);
+    const rows = await queryAll(
+      "SELECT * FROM incident_evidence WHERE incident_id = $1 ORDER BY uploaded_at DESC",
+      [req.params.incidentId]
+    );
 
     const parsed = rows.map((r: any) => ({
       ...r,
@@ -69,7 +68,7 @@ router.post("/:incidentId/upload", requireAuth, async (req: Request, res: Respon
     }
 
     // Verify incident exists
-    const incident = db.prepare("SELECT id, title FROM incidents WHERE id = ?").get(incidentId) as any;
+    const incident = await queryGet("SELECT id, title FROM incidents WHERE id = $1", [incidentId]) as any;
     if (!incident) return res.status(404).json({ message: "Incident not found." });
 
     // Save file, compute hash
@@ -81,17 +80,17 @@ router.post("/:incidentId/upload", requireAuth, async (req: Request, res: Respon
     if (!scanResult.safe) {
       // Audit the rejected upload
       const auditId = `AUD-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
-      db.prepare(`
+      await queryRun(`
         INSERT INTO audit_logs (id, timestamp, user_name, user_role, action, details, entity_type, entity_id, ip_address, user_agent)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `, [
         auditId, new Date().toISOString(),
         req.user!.name || req.user!.email, req.user!.role,
         "EVIDENCE_MALWARE_BLOCKED",
         `Malicious file blocked: "${fileName}" — ${scanResult.threat}. ${scanResult.details || ""}`,
         "incident_evidence", incidentId,
         req.ip || "unknown", req.headers["user-agent"] || "unknown"
-      );
+      ]);
       return res.status(422).json({
         error:   "MALWARE_DETECTED",
         message: `Upload rejected: ${scanResult.threat}`,
@@ -117,23 +116,23 @@ router.post("/:incidentId/upload", requireAuth, async (req: Request, res: Respon
       ipAddress: req.ip || "unknown",
     };
 
-    db.prepare(`
+    await queryRun(`
       INSERT INTO incident_evidence
         (id, incident_id, file_name, file_url, file_type, file_size, sha256_hash, chain_of_custody, tags, uploaded_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `, [
       id, incidentId, fileName, diskPath,
       fileType, size, sha256,
       JSON.stringify([custodyEntry]),
       JSON.stringify(tags || []),
       now
-    );
+    ]);
 
     // Log to audit
-    db.prepare(`
+    await queryRun(`
       INSERT INTO audit_logs (id, timestamp, user_name, user_role, action, details, entity_type, entity_id, ip_address, user_agent)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `, [
       `AUD-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
       now,
       req.user!.name || req.user!.email,
@@ -144,7 +143,7 @@ router.post("/:incidentId/upload", requireAuth, async (req: Request, res: Respon
       id,
       req.ip || "unknown",
       req.headers["user-agent"] || "unknown"
-    );
+    ]);
 
     res.json({
       id,
@@ -161,12 +160,12 @@ router.post("/:incidentId/upload", requireAuth, async (req: Request, res: Respon
 });
 
 // POST /api/evidence/:incidentId/:evidenceId/custody — add custody entry
-router.post("/:incidentId/:evidenceId/custody", requireAuth, (req, res) => {
+router.post("/:incidentId/:evidenceId/custody", requireAuth, async (req, res) => {
   try {
     const { evidenceId } = req.params;
     const { action, note } = req.body;
 
-    const row = db.prepare("SELECT * FROM incident_evidence WHERE id = ?").get(evidenceId) as any;
+    const row = await queryGet("SELECT * FROM incident_evidence WHERE id = $1", [evidenceId]) as any;
     if (!row) return res.status(404).json({ message: "Evidence not found." });
 
     const custody: any[] = JSON.parse(row.chain_of_custody || "[]");
@@ -184,8 +183,9 @@ router.post("/:incidentId/:evidenceId/custody", requireAuth, (req, res) => {
 
     custody.push(entry);
 
-    db.prepare("UPDATE incident_evidence SET chain_of_custody = ? WHERE id = ?")
-      .run(JSON.stringify(custody), evidenceId);
+    await queryRun("UPDATE incident_evidence SET chain_of_custody = $1 WHERE id = $2", [
+      JSON.stringify(custody), evidenceId
+    ]);
 
     res.json({ ok: true, entry, totalEntries: custody.length });
   } catch (err: any) {
@@ -194,10 +194,10 @@ router.post("/:incidentId/:evidenceId/custody", requireAuth, (req, res) => {
 });
 
 // POST /api/evidence/:incidentId/:evidenceId/verify — re-verify file integrity
-router.post("/:incidentId/:evidenceId/verify", requireAuth, (req, res) => {
+router.post("/:incidentId/:evidenceId/verify", requireAuth, async (req, res) => {
   try {
     const { evidenceId } = req.params;
-    const row = db.prepare("SELECT * FROM incident_evidence WHERE id = ?").get(evidenceId) as any;
+    const row = await queryGet("SELECT * FROM incident_evidence WHERE id = $1", [evidenceId]) as any;
     if (!row) return res.status(404).json({ message: "Evidence not found." });
 
     const filePath = path.join(EVIDENCE_DIR, row.file_url);
@@ -221,8 +221,9 @@ router.post("/:incidentId/:evidenceId/verify", requireAuth, (req, res) => {
       note:      verified ? `File integrity confirmed. SHA-256 matches original.` : `⚠️ Hash mismatch! File may have been tampered with.`,
       ipAddress: req.ip || "unknown",
     });
-    db.prepare("UPDATE incident_evidence SET chain_of_custody = ? WHERE id = ?")
-      .run(JSON.stringify(custody), evidenceId);
+    await queryRun("UPDATE incident_evidence SET chain_of_custody = $1 WHERE id = $2", [
+      JSON.stringify(custody), evidenceId
+    ]);
 
     res.json({
       verified,
@@ -236,21 +237,21 @@ router.post("/:incidentId/:evidenceId/verify", requireAuth, (req, res) => {
 });
 
 // DELETE /api/evidence/:incidentId/:evidenceId — requires admin + logs deletion attempt
-router.delete("/:incidentId/:evidenceId", requireAuth, (req, res) => {
+router.delete("/:incidentId/:evidenceId", requireAuth, async (req, res) => {
   try {
     const allowed = ["admin", "investigator"];
     if (!allowed.includes(req.user!.role)) {
       return res.status(403).json({ message: "Only Admin or Investigator can delete evidence." });
     }
     const { evidenceId } = req.params;
-    const row = db.prepare("SELECT * FROM incident_evidence WHERE id = ?").get(evidenceId) as any;
+    const row = await queryGet("SELECT * FROM incident_evidence WHERE id = $1", [evidenceId]) as any;
     if (!row) return res.status(404).json({ message: "Evidence not found." });
 
     // Audit the deletion BEFORE deleting
-    db.prepare(`
+    await queryRun(`
       INSERT INTO audit_logs (id, timestamp, user_name, user_role, action, details, entity_type, entity_id, ip_address, user_agent)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `, [
       `AUD-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
       new Date().toISOString(),
       req.user!.name || req.user!.email,
@@ -261,9 +262,9 @@ router.delete("/:incidentId/:evidenceId", requireAuth, (req, res) => {
       evidenceId,
       req.ip || "unknown",
       req.headers["user-agent"] || "unknown"
-    );
+    ]);
 
-    db.prepare("DELETE FROM incident_evidence WHERE id = ?").run(evidenceId);
+    await queryRun("DELETE FROM incident_evidence WHERE id = $1", [evidenceId]);
 
     // Also remove file from disk
     const filePath = path.join(EVIDENCE_DIR, row.file_url);

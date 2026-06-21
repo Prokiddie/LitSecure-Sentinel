@@ -10,10 +10,10 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { db, queries, generateId } from "../db/index.js";
+import { queryGet, queryRun, dbTransaction, generateId } from "../db/index.js";
 import { getUserFromSupabase, isSupabaseEnabled } from "../db/supabase-client.js";
 import { signAccessToken, verifyAccessToken, signRefreshToken, verifyRefreshToken, hashToken } from "../services/tokenService.js";
-import { verifyMfaToken, isMfaEnabled, setupMfa, confirmMfa, disableMfa } from "../services/mfa.js";
+import { verifyMfaToken, setupMfa, confirmMfa, disableMfa } from "../services/mfa.js";
 import { validate } from "../middleware/validate.js";
 import { authLimiter } from "../middleware/rateLimiter.js";
 import { loginSchema, updateProfileSchema, changePasswordSchema, confirmMfaSchema, disableMfaSchema } from "../schemas/index.js";
@@ -28,7 +28,7 @@ function isStrongPassword(p: string) {
   return p.length >= 8 && /[A-Z]/.test(p) && /[a-z]/.test(p) && /\d/.test(p);
 }
 
-function revokeToken(rawToken: string, userId?: string): void {
+async function revokeToken(rawToken: string, userId?: string): Promise<void> {
   try {
     const payload  = verifyAccessToken(rawToken);
     const hash     = hashToken(rawToken);
@@ -36,43 +36,45 @@ function revokeToken(rawToken: string, userId?: string): void {
       ? new Date((payload as any).exp * 1000).toISOString()
       : new Date(Date.now() + 8 * 3600_000).toISOString();
 
-    db.prepare(`
-      INSERT OR IGNORE INTO revoked_tokens (id, token_hash, user_id, revoked_at, expires_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(generateId("rev"), hash, userId || null, new Date().toISOString(), exp);
+    await queryRun(`
+      INSERT INTO revoked_tokens (id, token_hash, user_id, revoked_at, expires_at)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (token_hash) DO NOTHING
+    `, [generateId("rev"), hash, userId || null, new Date().toISOString(), exp]);
   } catch { /* token already invalid — nothing to revoke */ }
 }
 
-function checkBruteForce(email: string): { locked: boolean; minutesLeft?: number } {
-  const user = db.prepare("SELECT locked_until, failed_logins FROM users WHERE email = ?").get(email) as any;
+async function checkBruteForce(email: string): Promise<{ locked: boolean; minutesLeft?: number }> {
+  const user = await queryGet("SELECT locked_until, failed_logins FROM users WHERE email = $1", [email]) as any;
   if (!user?.locked_until) return { locked: false };
   const lockEnd = new Date(user.locked_until).getTime();
   if (Date.now() < lockEnd) {
     return { locked: true, minutesLeft: Math.ceil((lockEnd - Date.now()) / 60000) };
   }
   // Lock expired — reset
-  db.prepare("UPDATE users SET locked_until = NULL, failed_logins = 0 WHERE email = ?").run(email);
+  await queryRun("UPDATE users SET locked_until = NULL, failed_logins = 0 WHERE email = $1", [email]);
   return { locked: false };
 }
 
-function recordLoginAttempt(email: string, ip: string, success: boolean): void {
-  db.prepare(
-    "INSERT INTO login_attempts (id, email, ip, success, attempted_at) VALUES (?, ?, ?, ?, ?)"
-  ).run(generateId("la"), email, ip, success ? 1 : 0, new Date().toISOString());
+async function recordLoginAttempt(email: string, ip: string, success: boolean): Promise<void> {
+  await queryRun(
+    "INSERT INTO login_attempts (id, email, ip, success, attempted_at) VALUES ($1, $2, $3, $4, $5)",
+    [generateId("la"), email, ip, success ? 1 : 0, new Date().toISOString()]
+  );
 
   if (!success) {
-    const user = db.prepare("SELECT id, failed_logins FROM users WHERE email = ?").get(email) as any;
+    const user = await queryGet("SELECT id, failed_logins FROM users WHERE email = $1", [email]) as any;
     if (!user) return;
     const newCount = (user.failed_logins || 0) + 1;
     const lockUntil = newCount >= 5
       ? new Date(Date.now() + 15 * 60_000).toISOString()
       : null;
-    db.prepare("UPDATE users SET failed_logins = ?, locked_until = ? WHERE id = ?")
-      .run(newCount, lockUntil, user.id);
+    await queryRun("UPDATE users SET failed_logins = $1, locked_until = $2 WHERE id = $3", [newCount, lockUntil, user.id]);
   } else {
     // Reset on success
-    db.prepare("UPDATE users SET failed_logins = 0, locked_until = NULL, last_login = ? WHERE email = ?")
-      .run(new Date().toISOString(), email);
+    await queryRun("UPDATE users SET failed_logins = 0, locked_until = NULL, last_login = $1 WHERE email = $2", [
+      new Date().toISOString(), email
+    ]);
   }
 }
 
@@ -82,7 +84,7 @@ router.post("/login", authLimiter, validate(loginSchema), async (req, res) => {
   const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "";
 
   // 1️⃣ Brute-force check
-  const lockStatus = checkBruteForce(email);
+  const lockStatus = await checkBruteForce(email);
   if (lockStatus.locked) {
     return res.status(429).json({
       error: "ACCOUNT_LOCKED",
@@ -90,8 +92,8 @@ router.post("/login", authLimiter, validate(loginSchema), async (req, res) => {
     });
   }
 
-  // 2️⃣ Try SQLite first (local, fast, offline-capable)
-  let user: any = queries.getUserByEmail.get(email);
+  // 2️⃣ Try Database lookup
+  let user: any = await queryGet("SELECT * FROM users WHERE email = $1 AND is_active = 1", [email]);
 
   // 3️⃣ Fallback to Supabase
   if (!user && isSupabaseEnabled()) {
@@ -99,18 +101,21 @@ router.post("/login", authLimiter, validate(loginSchema), async (req, res) => {
       user = await getUserFromSupabase(email);
       if (user) {
         try {
-          queries.insertUser.run({
-            id:              user.id,
-            full_name:       user.full_name,
-            email:           user.email,
-            phone:           user.phone || null,
-            password_hash:   user.password_hash,
-            role:            user.role,
-            organization_id: null,
-            is_active:       1,
-            created_at:      new Date().toISOString(),
-            updated_at:      new Date().toISOString(),
-          });
+          await queryRun(`
+            INSERT INTO users (id,full_name,email,phone,password_hash,role,organization_id,is_active,created_at,updated_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+          `, [
+            user.id,
+            user.full_name,
+            user.email,
+            user.phone || null,
+            user.password_hash,
+            user.role,
+            null,
+            1,
+            new Date().toISOString(),
+            new Date().toISOString(),
+          ]);
         } catch { /* already cached */ }
       }
     } catch (err) {
@@ -119,14 +124,14 @@ router.post("/login", authLimiter, validate(loginSchema), async (req, res) => {
   }
 
   if (!user) {
-    recordLoginAttempt(email, ip, false);
+    await recordLoginAttempt(email, ip, false);
     return res.status(401).json({ error: "INVALID_CREDENTIALS", message: "Invalid email or password." });
   }
 
   // 4️⃣ Password check
   const valid = bcrypt.compareSync(password, user.password_hash);
   if (!valid) {
-    recordLoginAttempt(email, ip, false);
+    await recordLoginAttempt(email, ip, false);
     return res.status(401).json({ error: "INVALID_CREDENTIALS", message: "Invalid email or password." });
   }
 
@@ -139,15 +144,15 @@ router.post("/login", authLimiter, validate(loginSchema), async (req, res) => {
         message: "MFA token required. Please enter the 6-digit code from your authenticator app.",
       });
     }
-    const mfaValid = verifyMfaToken(user.id, String(mfa_token));
+    const mfaValid = await verifyMfaToken(user.id, String(mfa_token));
     if (!mfaValid) {
-      recordLoginAttempt(email, ip, false);
+      await recordLoginAttempt(email, ip, false);
       return res.status(401).json({ error: "MFA_INVALID", message: "Invalid MFA code. Please try again." });
     }
   }
 
   // 6️⃣ Issue token
-  recordLoginAttempt(email, ip, true);
+  await recordLoginAttempt(email, ip, true);
   const token = signAccessToken({
     userId: user.id,
     id:     user.id,
@@ -159,16 +164,16 @@ router.post("/login", authLimiter, validate(loginSchema), async (req, res) => {
   const refreshHash  = hashToken(refreshToken);
 
   // Store refresh token in database
-  db.prepare(`
+  await queryRun(`
     INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(
+    VALUES ($1, $2, $3, $4, $5)
+  `, [
     generateId("rt"),
     user.id,
     refreshHash,
     new Date(Date.now() + 7 * 24 * 3600_000).toISOString(),
     new Date().toISOString()
-  );
+  ]);
 
   return res.json({
     token,
@@ -187,17 +192,17 @@ router.post("/login", authLimiter, validate(loginSchema), async (req, res) => {
 
 // ─── POST /api/auth/logout ────────────────────────────────────────────────────
 // Now REVOKES the token — it will be rejected even before JWT expiry.
-router.post("/logout", (req, res) => {
+router.post("/logout", async (req, res) => {
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith("Bearer ")) {
     const rawToken = authHeader.slice(7);
-    revokeToken(rawToken, req.user?.id);
+    await revokeToken(rawToken, req.user?.id);
   }
   return res.json({ success: true, message: "Logged out successfully. Token has been revoked." });
 });
 
 // ─── POST /api/auth/register (Public citizen self-registration) ───────────────
-router.post("/register", authLimiter, (req, res) => {
+router.post("/register", authLimiter, async (req, res) => {
   if ((global as any).lockdownEnabled) {
     return res.status(403).json({
       error: "LOCKDOWN_ACTIVE",
@@ -220,7 +225,7 @@ router.post("/register", authLimiter, (req, res) => {
     });
   }
 
-  const existing = queries.getUserByEmail.get(email) as any;
+  const existing = await queryGet("SELECT * FROM users WHERE email = $1 AND is_active = 1", [email]) as any;
   if (existing) {
     return res.status(409).json({ error: "EMAIL_TAKEN", message: "An account with this email already exists." });
   }
@@ -230,18 +235,21 @@ router.post("/register", authLimiter, (req, res) => {
   const hash = bcrypt.hashSync(password, 12); // 12 rounds for new accounts
 
   try {
-    queries.insertUser.run({
+    await queryRun(`
+      INSERT INTO users (id,full_name,email,phone,password_hash,role,organization_id,is_active,created_at,updated_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    `, [
       id,
-      full_name:       name.trim(),
-      email:           email.toLowerCase().trim(),
-      phone:           phone?.trim() || "",
-      password_hash:   hash,
-      role:            "citizen",
-      organization_id: "PUBLIC",
-      is_active:       1,
-      created_at:      now,
-      updated_at:      now,
-    });
+      name.trim(),
+      email.toLowerCase().trim(),
+      phone?.trim() || "",
+      hash,
+      "citizen",
+      "PUBLIC",
+      1,
+      now,
+      now
+    ]);
   } catch (err: any) {
     console.error("[register] DB error:", err.message);
     return res.status(500).json({ error: "SERVER_ERROR", message: "Registration failed. Please try again." });
@@ -252,16 +260,16 @@ router.post("/register", authLimiter, (req, res) => {
   const refreshHash  = hashToken(refreshToken);
 
   // Store refresh token in database
-  db.prepare(`
+  await queryRun(`
     INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(
+    VALUES ($1, $2, $3, $4, $5)
+  `, [
     generateId("rt"),
     id,
     refreshHash,
     new Date(Date.now() + 7 * 24 * 3600_000).toISOString(),
     new Date().toISOString()
-  );
+  ]);
 
   return res.status(201).json({
     success: true,
@@ -285,12 +293,12 @@ router.post("/refresh", async (req, res) => {
     const tokenHash = hashToken(refreshToken);
 
     // Look up token in DB
-    const existing = db.prepare("SELECT * FROM refresh_tokens WHERE token_hash = ?").get(tokenHash) as any;
+    const existing = await queryGet("SELECT * FROM refresh_tokens WHERE token_hash = $1", [tokenHash]) as any;
 
     if (!existing) {
       // Re-use detection: valid signature but token not in database = reuse attempt!
       // Invalidate all sessions for this user for security
-      db.prepare("DELETE FROM refresh_tokens WHERE user_id = ?").run(userId);
+      await queryRun("DELETE FROM refresh_tokens WHERE user_id = $1", [userId]);
       return res.status(401).json({
         error: "TOKEN_REUSED",
         message: "Security alert: Refresh token has already been used. All sessions revoked."
@@ -299,12 +307,12 @@ router.post("/refresh", async (req, res) => {
 
     // Check expiration
     if (new Date(existing.expires_at).getTime() < Date.now()) {
-      db.prepare("DELETE FROM refresh_tokens WHERE token_hash = ?").run(tokenHash);
+      await queryRun("DELETE FROM refresh_tokens WHERE token_hash = $1", [tokenHash]);
       return res.status(401).json({ error: "REFRESH_TOKEN_EXPIRED", message: "Refresh token expired. Please log in again." });
     }
 
     // Fetch user
-    const user = db.prepare("SELECT * FROM users WHERE id = ? AND is_active = 1").get(userId) as any;
+    const user = await queryGet("SELECT * FROM users WHERE id = $1 AND is_active = 1", [userId]) as any;
     if (!user) {
       return res.status(401).json({ error: "USER_NOT_FOUND", message: "User not found or inactive." });
     }
@@ -321,19 +329,19 @@ router.post("/refresh", async (req, res) => {
     const newRefreshHash  = hashToken(newRefreshToken);
 
     // Transactional rotation: delete old, insert new
-    db.transaction(() => {
-      db.prepare("DELETE FROM refresh_tokens WHERE token_hash = ?").run(tokenHash);
-      db.prepare(`
+    await dbTransaction(async (q) => {
+      await q("DELETE FROM refresh_tokens WHERE token_hash = $1", [tokenHash]);
+      await q(`
         INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(
+        VALUES ($1, $2, $3, $4, $5)
+      `, [
         generateId("rt"),
         user.id,
         newRefreshHash,
         new Date(Date.now() + 7 * 24 * 3600_000).toISOString(),
         new Date().toISOString()
-      );
-    })();
+      ]);
+    });
 
     return res.json({
       token: newAccessToken,
@@ -346,14 +354,16 @@ router.post("/refresh", async (req, res) => {
 
 // ─── GET /api/auth/me ─────────────────────────────────────────────────────────
 // ─── PUT /api/auth/profile ───────────────────────────────────────────────────
-router.put("/profile", requireAuth, validate(updateProfileSchema), (req, res) => {
+router.put("/profile", requireAuth, validate(updateProfileSchema), async (req, res) => {
   const { fullName, phone } = req.body;
   try {
-    db.prepare("UPDATE users SET full_name = ?, phone = ?, updated_at = ? WHERE id = ?")
-      .run(fullName, phone || "", new Date().toISOString(), req.user!.id);
+    await queryRun("UPDATE users SET full_name = $1, phone = $2, updated_at = $3 WHERE id = $4", [
+      fullName, phone || "", new Date().toISOString(), req.user!.id
+    ]);
 
-    const updated = db.prepare("SELECT id, full_name, email, role, phone, mfa_enabled FROM users WHERE id = ?")
-      .get(req.user!.id) as any;
+    const updated = await queryGet("SELECT id, full_name, email, role, phone, mfa_enabled FROM users WHERE id = $1", [
+      req.user!.id
+    ]) as any;
 
     if (!updated) {
       return res.status(404).json({ error: "USER_NOT_FOUND", message: "User profile not found." });
@@ -377,10 +387,10 @@ router.put("/profile", requireAuth, validate(updateProfileSchema), (req, res) =>
 });
 
 // ─── POST /api/auth/profile/password ──────────────────────────────────────────
-router.post("/profile/password", requireAuth, validate(changePasswordSchema), (req, res) => {
+router.post("/profile/password", requireAuth, validate(changePasswordSchema), async (req, res) => {
   const { currentPassword, newPassword } = req.body;
   try {
-    const user = db.prepare("SELECT password_hash FROM users WHERE id = ?").get(req.user!.id) as any;
+    const user = await queryGet("SELECT password_hash FROM users WHERE id = $1", [req.user!.id]) as any;
     if (!user) {
       return res.status(404).json({ error: "USER_NOT_FOUND", message: "User not found." });
     }
@@ -391,8 +401,9 @@ router.post("/profile/password", requireAuth, validate(changePasswordSchema), (r
     }
 
     const hash = bcrypt.hashSync(newPassword, 12);
-    db.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?")
-      .run(hash, new Date().toISOString(), req.user!.id);
+    await queryRun("UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3", [
+      hash, new Date().toISOString(), req.user!.id
+    ]);
 
     return res.json({ success: true, message: "Password updated successfully." });
   } catch (err: any) {
@@ -404,7 +415,7 @@ router.post("/profile/password", requireAuth, validate(changePasswordSchema), (r
 // ─── POST /api/auth/profile/mfa/setup ─────────────────────────────────────────
 router.post("/profile/mfa/setup", requireAuth, async (req, res) => {
   try {
-    const user = db.prepare("SELECT email, mfa_enabled FROM users WHERE id = ?").get(req.user!.id) as any;
+    const user = await queryGet("SELECT email, mfa_enabled FROM users WHERE id = $1", [req.user!.id]) as any;
     if (!user) {
       return res.status(404).json({ error: "USER_NOT_FOUND", message: "User not found." });
     }
@@ -426,10 +437,10 @@ router.post("/profile/mfa/setup", requireAuth, async (req, res) => {
 });
 
 // ─── POST /api/auth/profile/mfa/confirm ───────────────────────────────────────
-router.post("/profile/mfa/confirm", requireAuth, validate(confirmMfaSchema), (req, res) => {
+router.post("/profile/mfa/confirm", requireAuth, validate(confirmMfaSchema), async (req, res) => {
   const { token } = req.body;
   try {
-    const confirmed = confirmMfa(req.user!.id, token);
+    const confirmed = await confirmMfa(req.user!.id, token);
     if (!confirmed) {
       return res.status(400).json({ error: "INVALID_MFA_TOKEN", message: "Invalid verification code. Setup not confirmed." });
     }
@@ -441,10 +452,10 @@ router.post("/profile/mfa/confirm", requireAuth, validate(confirmMfaSchema), (re
 });
 
 // ─── POST /api/auth/profile/mfa/disable ───────────────────────────────────────
-router.post("/profile/mfa/disable", requireAuth, validate(disableMfaSchema), (req, res) => {
+router.post("/profile/mfa/disable", requireAuth, validate(disableMfaSchema), async (req, res) => {
   const { password, token } = req.body;
   try {
-    const user = db.prepare("SELECT password_hash FROM users WHERE id = ?").get(req.user!.id) as any;
+    const user = await queryGet("SELECT password_hash FROM users WHERE id = $1", [req.user!.id]) as any;
     if (!user) {
       return res.status(404).json({ error: "USER_NOT_FOUND", message: "User not found." });
     }
@@ -454,7 +465,7 @@ router.post("/profile/mfa/disable", requireAuth, validate(disableMfaSchema), (re
       return res.status(401).json({ error: "INVALID_CREDENTIALS", message: "Incorrect password." });
     }
 
-    const disabled = disableMfa(req.user!.id, token);
+    const disabled = await disableMfa(req.user!.id, token);
     if (!disabled) {
       return res.status(400).json({ error: "INVALID_MFA_TOKEN", message: "Invalid verification code." });
     }
@@ -466,9 +477,10 @@ router.post("/profile/mfa/disable", requireAuth, validate(disableMfaSchema), (re
   }
 });
 
-router.get("/me", requireAuth, (req, res) => {
-  const user = db.prepare("SELECT id, full_name, email, role, phone, mfa_enabled, last_login FROM users WHERE id = ?")
-    .get(req.user!.id) as any;
+router.get("/me", requireAuth, async (req, res) => {
+  const user = await queryGet("SELECT id, full_name, email, role, phone, mfa_enabled, last_login FROM users WHERE id = $1", [
+    req.user!.id
+  ]) as any;
   return res.json({ user: { ...req.user, mfa_enabled: !!user?.mfa_enabled, last_login: user?.last_login } });
 });
 
