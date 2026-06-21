@@ -1690,6 +1690,47 @@ export default function SituationRoom({ incidents = [], stats }: SituationRoomPr
   const { isConnected, lastIncident, lastChatMsg, sendChatMessage, connectedCount } = useWarRoomWS();
   const [liveNewIncident, setLiveNewIncident] = useState<any>(null);
 
+  const [chatInput, setChatInput] = useState("");
+  const [chatLog, setChatLog] = useState<ChatMessage[]>(EOC_CHAT_FEED);
+
+  useEffect(() => {
+    if (lastChatMsg) {
+      setChatLog(prev => [
+        ...prev,
+        {
+          sender: lastChatMsg.sender || "System",
+          org: lastChatMsg.org || "EOC Node",
+          msg: lastChatMsg.text,
+          time: new Date().toLocaleTimeString("en-MW", { hour: "2-digit", minute: "2-digit" }),
+          type: "system"
+        }
+      ]);
+    }
+  }, [lastChatMsg]);
+
+  const handleSendChat = () => {
+    if (!chatInput.trim()) return;
+    sendChatMessage(chatInput.trim(), "SOC-Analyst", "LitSecure SOC");
+    setChatLog(prev => [
+      ...prev,
+      {
+        sender: "SOC-Analyst",
+        org: "LitSecure SOC",
+        msg: chatInput.trim(),
+        time: new Date().toLocaleTimeString("en-MW", { hour: "2-digit", minute: "2-digit" }),
+        type: "soc"
+      }
+    ]);
+    setChatInput("");
+  };
+
+  const activeCriticalHigh = useMemo(() => {
+    return incidents.filter(i => 
+      (i.severity === "Critical" || i.severity === "High") && 
+      !["Resolved", "Contained", "Closed"].includes(i.status)
+    );
+  }, [incidents]);
+
   useEffect(() => {
     if (lastIncident) {
       setLiveNewIncident(lastIncident);
@@ -1815,69 +1856,72 @@ export default function SituationRoom({ incidents = [], stats }: SituationRoomPr
         </div>
       </div>
 
-      {/* ─── Critical Priority Banner ─── */}
-      {criticalActive.length > 0 && (
-        <div className="relative overflow-hidden rounded-2xl border border-red-500/50 bg-red-500/8 px-5 py-4">
-          <div className="absolute inset-0 bg-red-500/5 animate-pulse" style={{ animationDuration: "2s" }} />
-          <div className="relative">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-8 h-8 rounded-lg bg-red-500/20 border border-red-500/40 flex items-center justify-center shrink-0">
-                <Siren className="w-4 h-4 text-red-400 animate-pulse" />
-              </div>
-              <div>
-                <div className="text-red-400 font-bold font-mono text-xs uppercase tracking-widest">🚨 {criticalActive.length} CRITICAL INCIDENT{criticalActive.length > 1 ? "S" : ""} — PRIORITY MATRIX</div>
-                <div className="text-[9px] text-red-500/70 font-mono">Immediate EOC activation required · Auto-escalation active</div>
-              </div>
-              <button
-                onClick={() => setWarRoom({ districtId: "lilongwe", name: "Lilongwe" })}
-                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-400 text-white text-[10px] font-bold font-mono transition shrink-0"
-              >
-                <Crosshair className="w-3 h-3" /> ENTER WAR ROOM
-              </button>
+      {/* ─── Top Row (Metrics) ─── */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* Metric 1: National Threat Level */}
+        <div className={`rounded-xl border p-4 flex flex-col justify-between ${threatLevel.pulse ? 'bg-red-500/8 border-red-500/30 text-red-400' : 'bg-green-500/8 border-green-500/30 text-emerald-400'}`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">National Threat Index</span>
+            <Radio className="w-4 h-4 text-slate-500" />
+          </div>
+          <div className="mt-2">
+            <div className={`font-orbitron text-2xl font-bold ${threatLevel.color === 'red' ? 'text-red-400' : threatLevel.color === 'orange' ? 'text-orange-400' : 'text-emerald-400'}`}>
+              {threatLevel.label}
             </div>
-            <div className="space-y-2">
-              {criticalActive.slice(0, 3).map((inc, idx) => {
-                const { label: tsLabel, minutesSince } = timeSince(inc.incidentDate);
-                const score = (inc as any).priorityScore ?? 0;
-                const escalated = minutesSince > 30;
-                return (
-                  <div key={inc.id} className="flex items-center gap-3 bg-black/40 rounded-lg px-3 py-2.5 border border-red-500/20 relative overflow-hidden">
-                    {/* Left severity stripe */}
-                    <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-red-500" />
-                    <PriorityBadge score={score} level={(inc as any).priorityLevel ?? ""} severity={inc.severity} />
-                    <span className="text-[10px] font-mono text-slate-200 truncate flex-1 font-semibold">{inc.title}</span>
-                    <span className="text-[9px] font-mono text-slate-500 shrink-0">{inc.id}</span>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="text-[9px] font-mono text-slate-500">{tsLabel}</span>
-                      {escalated && (
-                        <span className="text-[8px] font-bold text-red-300 bg-red-500/20 border border-red-500/40 px-1.5 py-0.5 rounded font-mono animate-pulse">⚡ AUTO-ESCALATED</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <p className="text-[9px] text-slate-500 mt-1 uppercase font-mono">MACERT Fusion Center Feed</p>
           </div>
         </div>
-      )}
 
-      {/* ─── Threat Level Banner ─── */}
-      <ThreatLevelBanner level={threatLevel} />
+        {/* Metric 2: Active Incidents */}
+        <div className="rounded-xl border border-white/5 bg-[#0d1520] p-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Active Operations</span>
+            <AlertTriangle className="w-4 h-4 text-orange-400" />
+          </div>
+          <div className="mt-2">
+            <div className="font-orbitron text-3xl font-bold text-orange-400">
+              {incidents.filter(i => !["Resolved", "Contained", "Closed"].includes(i.status)).length} Cases
+            </div>
+            <p className="text-[9px] text-slate-500 mt-1 uppercase font-mono">Triage and Investigations</p>
+          </div>
+        </div>
 
-      {/* ─── Bento Mission Metrics ─── */}
-      <BentoMissionMetrics 
-        incidents={incidents} 
-        stats={stats} 
-        onMetricClick={(type) => setMetricModal(type)}
-      />
+        {/* Metric 3: Critical Cases */}
+        <div className="rounded-xl border border-white/5 bg-[#0d1520] p-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Critical Escalations</span>
+            <Siren className="w-4 h-4 text-red-500 animate-pulse" />
+          </div>
+          <div className="mt-2">
+            <div className="font-orbitron text-3xl font-bold text-red-400">
+              {incidents.filter(i => i.severity === "Critical" && !["Resolved", "Contained", "Closed"].includes(i.status)).length} Active
+            </div>
+            <p className="text-[9px] text-slate-500 mt-1 uppercase font-mono">Immediate SLA Action Required</p>
+          </div>
+        </div>
 
-      {/* ─── Map + Threat Feed Row ─── */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-1">
+        {/* Metric 4: Average Response Time */}
+        <div className="rounded-xl border border-white/5 bg-[#0d1520] p-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Mean Response Time</span>
+            <Clock className="w-4 h-4 text-blue-400" />
+          </div>
+          <div className="mt-2">
+            <div className="font-orbitron text-3xl font-bold text-blue-400">
+              12.4 Mins
+            </div>
+            <p className="text-[9px] text-slate-500 mt-1 uppercase font-mono">SLA Performance Target: 15m</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Center Grid: Map (65%) & Critical Incident Queue (35%) ─── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left/Center Map (65% width) */}
+        <div className="lg:col-span-8">
           <MalawiIncidentMap
             incidents={incidents}
             onHotspotClick={(id, name) => {
-              // Find this district's risk from the incidents
               const risk = getDistrictRisk(id, incidents);
               const activeIncs = incidents.filter(i =>
                 !["Resolved","Contained","Closed"].includes(i.status) &&
@@ -1898,155 +1942,134 @@ export default function SituationRoom({ incidents = [], stats }: SituationRoomPr
           />
         </div>
 
-        <div className="xl:col-span-2 space-y-4">
-          {/* Sector Health */}
-          <SectorHealthDashboard 
-            incidents={incidents} 
-            onSectorClick={(id, label, health) => setSectorDetail({ id, label, health })}
-          />
-
-          {/* ── Live National Threat Intelligence Feed ── */}
-          <div className="terminal-bg p-0 overflow-hidden">
-            {/* Animated scan line */}
-            <div className="scan-line" />
-
-            {/* Feed header */}
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-[rgba(0,255,65,0.12)] relative z-10">
-              <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-[9px] font-mono font-bold text-red-400 uppercase tracking-widest">Live Threat Intelligence Feed</span>
+        {/* Right Critical Incident Queue (35% width) */}
+        <div className="lg:col-span-4 card p-5 flex flex-col h-[560px]">
+          <h3 className="font-grotesk font-bold text-sm text-white flex items-center gap-2 border-b border-white/5 pb-3 shrink-0">
+            <div className="w-1.5 h-4 bg-red-500 rounded-full animate-pulse" />
+            Critical Operations Queue
+          </h3>
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1 mt-3 scrollbar-thin">
+            {activeCriticalHigh.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center text-slate-600 font-mono text-xs">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500/30 mb-2" />
+                No critical or high severity<br />incidents active in operations queue.
               </div>
-              <div className="ml-auto flex items-center gap-2">
-                <button
-                  onClick={() => setFeedPaused(p => !p)}
-                  className={`text-[9px] font-mono px-2 py-0.5 rounded border transition ${
-                    feedPaused
-                      ? "bg-[#FFD600]/10 border-[#FFD600]/30 text-[#FFD600]"
-                      : "bg-white/5 border-white/10 text-slate-500 hover:border-white/20"
-                  }`}
-                >
-                  {feedPaused ? "▶ PLAY" : "⏸ PAUSE"}
-                </button>
-                <span className="text-[8px] font-mono text-slate-600">MACERT · AbuseIPDB · HOVER→SCORE</span>
-              </div>
-            </div>
-
-            {/* Feed rows */}
-            <div className="relative z-10 divide-y divide-[rgba(255,255,255,0.04)]">
-              {NATIONAL_THREATS.map((threat, idx) => {
-                const levelColor =
-                  threat.level === "CRITICAL" ? { bar: "bg-red-500",    badge: "text-red-400 border-red-500/30 bg-red-500/10",     icon: "text-red-500" } :
-                  threat.level === "HIGH"     ? { bar: "bg-orange-500", badge: "text-orange-400 border-orange-500/30 bg-orange-500/10", icon: "text-orange-500" } :
-                                               { bar: "bg-yellow-400", badge: "text-yellow-400 border-yellow-500/30 bg-yellow-500/10", icon: "text-yellow-400" };
-                const score = threat.ip && threatScores[threat.ip];
+            ) : (
+              activeCriticalHigh.map(inc => {
+                const score = (inc as any).priorityScore ?? 0;
                 return (
                   <div
-                    key={threat.id}
-                    onMouseEnter={() => { setHoveredThreat(threat.id); if (threat.ip) fetchThreatScore(threat.ip, threat.id); }}
-                    onMouseLeave={() => setHoveredThreat(null)}
-                    className="relative"
+                    key={inc.id}
+                    onClick={() => setWarRoom({ districtId: inc.id, name: inc.reporterOrg || "Lilongwe" })}
+                    className="p-3 bg-white/2 border border-red-500/20 hover:border-red-500/50 rounded-xl transition cursor-pointer relative overflow-hidden group"
                   >
-                    <button
-                      onClick={() => setThreatDetail(threat)}
-                      className={`w-full text-left px-4 py-3 transition-all group relative overflow-hidden ${
-                        hoveredThreat === threat.id ? "bg-white/3" : "bg-transparent"
-                      }`}
-                    >
-                      {/* Left severity stripe */}
-                      <div className={`absolute left-0 top-0 bottom-0 w-0.5 ${levelColor.bar}`} />
-
-                      <div className="flex items-center gap-2 mb-1.5 pl-2">
-                        {/* Severity badge */}
-                        <span className={`text-[7px] font-bold uppercase px-1.5 py-0.5 rounded font-mono border ${levelColor.badge}`}>
-                          {threat.level}
-                        </span>
-                        {/* IP badge */}
-                        {threat.ip && (
-                          <span className="text-[8px] font-mono text-slate-500 bg-white/3 border border-white/8 px-1.5 py-0.5 rounded">
-                            {threat.ip}
-                          </span>
-                        )}
-                        {/* Score pill (on hover) */}
-                        {score !== undefined && (
-                          <span className={`text-[8px] font-bold font-mono px-1.5 py-0.5 rounded border ${
-                            (score ?? 0) >= 80 ? "text-red-400 bg-red-500/10 border-red-500/30" :
-                            (score ?? 0) >= 50 ? "text-orange-400 bg-orange-500/10 border-orange-500/30" :
-                            "text-amber-400 bg-amber-500/10 border-amber-500/30"
-                          }`}>
-                            {score === null ? "SCORING…" : `THREAT·${score}`}
-                          </span>
-                        )}
-                        {/* Feed source */}
-                        <span className="text-[8px] font-mono text-slate-600 ml-auto">{threat.feed}</span>
-                        <span className="text-[8px] font-mono text-slate-700">{threat.time}</span>
-                      </div>
-
-                      <p className="text-[11px] text-slate-300 leading-relaxed pl-2 font-mono">{threat.msg}</p>
-                    </button>
+                    <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-red-500" />
+                    <div className="flex justify-between items-center text-[8px] font-mono text-slate-500 mb-1 pl-1">
+                      <span className="font-bold text-red-400">{inc.id}</span>
+                      <span>{timeSince(inc.incidentDate).label} ago</span>
+                    </div>
+                    <h4 className="text-xs font-bold text-slate-200 group-hover:text-white truncate pl-1">{inc.title}</h4>
+                    <div className="flex items-center gap-2 mt-2 pl-1 flex-wrap">
+                      <span className="text-[7px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border border-red-500/30 bg-red-500/10 text-red-400">
+                        {inc.severity}
+                      </span>
+                      {score > 0 && <PriorityBadge score={score} level={(inc as any).priorityLevel || ""} />}
+                      <span className="text-[9px] font-mono text-slate-500 truncate max-w-[120px]">{inc.reporterOrg}</span>
+                    </div>
                   </div>
                 );
-              })}
-            </div>
-
-            {/* Response units */}
-            <div className="border-t border-[rgba(0,255,65,0.08)] px-4 py-3 relative z-10">
-              <div className="text-[8px] font-mono text-slate-600 uppercase tracking-widest mb-2">Response Unit Status</div>
-              <div className="space-y-1.5">
-                {[
-                  { name: "MACERT Response Team",  status: "On Standby",   dot: "bg-[#FFD600]" },
-                  { name: "Police Cybercrime Unit", status: "Investigating", dot: "bg-orange-400" },
-                  { name: "MDF Cyber-Cell",         status: "On Alert",     dot: "bg-red-500 animate-pulse" },
-                ].map(u => (
-                  <div key={u.name} className="flex items-center gap-2 text-[10px] font-mono">
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${u.dot}`} />
-                    <span className="text-slate-400 flex-1">{u.name}</span>
-                    <span className={`font-bold ${
-                      u.status === "Investigating" ? "text-orange-400" :
-                      u.status === "On Alert"      ? "text-red-400" : "text-[#FFD600]"
-                    }`}>{u.status}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+              })
+            )}
           </div>
         </div>
       </div>
 
-      {/* ─── Enter EOC War Room CTA ─── */}
-      {incidents.some(i => i.severity === "Critical" && !["Resolved", "Contained", "Closed"].includes(i.status)) && (
-        <div className="animate-pulse-critical rounded-2xl relative overflow-hidden">
-          {/* Animated top edge glow */}
-          <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent" />
-          <div className="absolute inset-0 bg-gradient-to-r from-red-950/60 via-red-900/30 to-transparent rounded-2xl" />
+      {/* ─── Bottom Row: 3 Columns ─── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Column 1: Live Alerts Feed */}
+        <div className="terminal-bg p-0 overflow-hidden h-[380px] flex flex-col">
+          <div className="scan-line" />
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-[rgba(0,255,65,0.12)] shrink-0 bg-[#080c17]">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-[9px] font-mono font-bold text-red-400 uppercase tracking-widest">Live Threat Feed</span>
+          </div>
+          <div className="flex-1 overflow-y-auto divide-y divide-[rgba(255,255,255,0.04)] scrollbar-thin">
+            {NATIONAL_THREATS.map((threat) => {
+              const levelColor =
+                threat.level === "CRITICAL" ? { bar: "bg-red-500", badge: "text-red-400 border-red-500/30 bg-red-500/10" } :
+                threat.level === "HIGH"     ? { bar: "bg-orange-500", badge: "text-orange-400 border-orange-500/30 bg-orange-500/10" } :
+                                             { bar: "bg-yellow-400", badge: "text-yellow-400 border-yellow-500/30 bg-yellow-500/10" };
+              return (
+                <button
+                  key={threat.id}
+                  onClick={() => setThreatDetail(threat)}
+                  onMouseEnter={() => { if (threat.ip) fetchThreatScore(threat.ip, threat.id); }}
+                  className="w-full text-left px-4 py-2.5 transition-hover hover:bg-white/2 relative block"
+                >
+                  <div className="absolute left-0 top-0 bottom-0 w-[2px]" style={{ background: threat.level === "CRITICAL" ? "#ef4444" : threat.level === "HIGH" ? "#f97316" : "#eab308" }} />
+                  <div className="flex items-center gap-1.5 mb-1 text-[8px] font-mono">
+                    <span className={`px-1.5 py-0.5 rounded border font-bold text-[7px] ${levelColor.badge}`}>{threat.level}</span>
+                    <span className="text-slate-500 font-semibold">{threat.ip}</span>
+                    <span className="ml-auto text-slate-600">{threat.time}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-300 truncate font-mono">{threat.msg}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
-          <div className="relative p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <div className="flex items-center gap-4">
-              {/* Icon */}
-              <div className="relative shrink-0">
-                <div className="absolute inset-0 bg-red-500/30 rounded-xl blur-lg animate-pulse" />
-                <div className="relative w-14 h-14 rounded-xl bg-red-500/20 border border-red-500/60 flex items-center justify-center">
-                  <Siren className="w-7 h-7 text-red-400" />
+        {/* Column 2: EOC Coordination Feed */}
+        <div className="card p-0 flex flex-col h-[380px] overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5 shrink-0 bg-black/10">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+            <span className="text-[9px] font-mono font-bold text-blue-400 uppercase tracking-widest">EOC Coordination Feed</span>
+            <span className="text-[8px] text-slate-500 font-mono ml-auto">{connectedCount} Online</span>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin">
+            {chatLog.map((c, i) => {
+              const typeColor =
+                c.type === "macert" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" :
+                c.type === "police" ? "text-blue-400 bg-blue-500/10 border-blue-500/20" :
+                c.type === "system" ? "text-red-400 bg-red-500/10 border-red-500/20" :
+                                     "text-purple-400 bg-purple-500/10 border-purple-500/20";
+              return (
+                <div key={i} className="space-y-1 text-xs">
+                  <div className="flex justify-between items-baseline text-[8.5px] font-mono text-slate-500">
+                    <span className={`px-1.5 py-0.5 rounded border font-bold ${typeColor}`}>{c.sender} ({c.org})</span>
+                    <span>{c.time}</span>
+                  </div>
+                  <p className="text-slate-300 leading-snug font-sans bg-white/2 p-2 rounded-lg border border-white/3">{c.msg}</p>
                 </div>
-              </div>
-              <div>
-                <div className="font-bebas text-2xl text-red-400 tracking-widest leading-none">⚠ CRITICAL INCIDENT ACTIVE</div>
-                <p className="text-slate-400 text-[11px] mt-1 font-mono">
-                  EOC activation required · MACERT Coordinated Response Protocol · Auto-escalation engaged
-                </p>
-              </div>
-            </div>
-
+              );
+            })}
+          </div>
+          <div className="p-3 border-t border-white/5 bg-black/10 flex gap-2 shrink-0">
+            <input
+              type="text"
+              placeholder="Send message to EOC..."
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleSendChat(); }}
+              className="flex-1 bg-[#1a2332] border border-[#1e2d42] text-xs font-mono text-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-500"
+            />
             <button
-              onClick={() => setWarRoom({ districtId: "lilongwe", name: "Lilongwe" })}
-              id="enter-war-room-btn"
-              className="sm:ml-auto flex items-center gap-2.5 px-6 py-3 rounded-xl bg-red-500 hover:bg-red-400 text-white font-bold font-mono text-sm transition-all hover:shadow-[0_0_30px_rgba(239,68,68,0.5)] active:scale-95 shrink-0"
+              onClick={handleSendChat}
+              className="px-3 py-1.5 bg-blue-500 hover:bg-blue-400 text-black font-mono font-bold text-xs rounded-lg transition"
             >
-              <Crosshair className="w-4 h-4" />
-              ENTER EOC WAR ROOM
+              Send
             </button>
           </div>
         </div>
-      )}
+
+        {/* Column 3: Sector Health */}
+        <div className="card p-0 h-[380px] overflow-hidden flex flex-col">
+          <SectorHealthDashboard 
+            incidents={incidents} 
+            onSectorClick={(id, label, health) => setSectorDetail({ id, label, health })}
+          />
+        </div>
+      </div>
 
       {/* ─── AI Cyber Commander ─── */}
       <AiCommanderPanel />
@@ -2054,7 +2077,7 @@ export default function SituationRoom({ incidents = [], stats }: SituationRoomPr
       {/* ─── SIEM Correlation Engine ─── */}
       <div className="rounded-xl border border-purple-500/20 bg-purple-500/3 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-purple-500/15">
+        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-purple-500/15 bg-[#080c17]">
           <div className="w-1.5 h-5 bg-purple-500 rounded-full" />
           <span className="font-grotesk font-bold text-sm text-white">SIEM Correlation Engine</span>
           <span className="text-[9px] font-mono text-slate-500">Event Aggregation · Rule Matching</span>

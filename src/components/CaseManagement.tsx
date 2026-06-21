@@ -740,9 +740,16 @@ function NewCaseModal({
 interface CaseManagementProps {
   token: string;
   role: string;
+  initialSelectedIncidentId?: string | null;
+  onClearInitialSelection?: () => void;
 }
 
-export default function CaseManagement({ token, role }: CaseManagementProps) {
+export default function CaseManagement({
+  token,
+  role,
+  initialSelectedIncidentId,
+  onClearInitialSelection,
+}: CaseManagementProps) {
   const [incidents, setIncidents]     = useState<Incident[]>([]);
   const [loading, setLoading]         = useState(true);
   const [search, setSearch]           = useState("");
@@ -754,6 +761,12 @@ export default function CaseManagement({ token, role }: CaseManagementProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { toasts, push }              = useNotifications();
   const PER_PAGE = 12;
+
+  // Comment & evidence state
+  const [commentText, setCommentText] = useState("");
+  const [postingComment, setPostingComment] = useState(false);
+  const [evidenceList, setEvidenceList] = useState<any[]>([]);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
 
   // Ctrl+N
   useEffect(() => {
@@ -772,13 +785,25 @@ export default function CaseManagement({ token, role }: CaseManagementProps) {
       });
       if (res.ok) {
         const data = await res.json();
-        setIncidents(Array.isArray(data) ? data : (data.incidents ?? []));
+        const list = Array.isArray(data) ? data : (data.incidents ?? []);
+        setIncidents(list);
       }
     } catch { push("Failed to load incidents", "error"); }
     setLoading(false);
   }, [token, push]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Handle initialSelectedIncidentId
+  useEffect(() => {
+    if (initialSelectedIncidentId && incidents.length > 0) {
+      const match = incidents.find(i => i.id === initialSelectedIncidentId);
+      if (match) {
+        setSelected(match);
+      }
+      onClearInitialSelection?.();
+    }
+  }, [initialSelectedIncidentId, incidents, onClearInitialSelection]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -802,8 +827,30 @@ export default function CaseManagement({ token, role }: CaseManagementProps) {
   }), [incidents]);
 
   const handleEscalate = async (id: string) => {
-    push(`Case ${id} escalated to National Alert Level.`, "warning");
-    setSelected(null);
+    try {
+      const res = await fetch(`/api/incidents/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          severity: "Critical",
+          note: "Case escalated to National Alert Level."
+        })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setIncidents(prev => prev.map(i => i.id === updated.id ? updated : i));
+        if (selected?.id === id) {
+          setSelected(updated);
+        }
+        push(`Case ${id} escalated to Critical Alert Level.`, "warning");
+        load();
+      }
+    } catch {
+      push("Failed to escalate case", "error");
+    }
   };
 
   const handleCopy = (text: string) => {
@@ -819,10 +866,134 @@ export default function CaseManagement({ token, role }: CaseManagementProps) {
     });
   };
 
+  // Fetch evidence for selected incident
+  const fetchEvidence = useCallback(async () => {
+    if (!selected) return;
+    setEvidenceLoading(true);
+    try {
+      const res = await fetch(`/api/evidence/${selected.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setEvidenceList(await res.json());
+      }
+    } catch {
+      push("Failed to load evidence files", "error");
+    } finally {
+      setEvidenceLoading(false);
+    }
+  }, [selected?.id, token, push]);
+
+  useEffect(() => {
+    if (selected) {
+      fetchEvidence();
+    }
+  }, [selected?.id, fetchEvidence]);
+
+  const handleUpdateField = async (field: string, value: any) => {
+    if (!selected) return;
+    try {
+      const payload: any = {};
+      payload[field] = value;
+      if (field === "status") {
+        payload.note = `Status transitioned: ${selected.status} → ${value}`;
+      } else if (field === "assigned_investigator") {
+        payload.note = `Case assigned to: ${value || "Unassigned"}`;
+      }
+
+      const res = await fetch(`/api/incidents/${selected.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setIncidents(prev => prev.map(i => i.id === updated.id ? updated : i));
+        setSelected(updated);
+        push("Field updated successfully", "success");
+        load();
+      }
+    } catch {
+      push("Failed to update field", "error");
+    }
+  };
+
+  const handleAddComment = async () => {
+    if (!selected || !commentText.trim()) return;
+    setPostingComment(true);
+    try {
+      const res = await fetch(`/api/incidents/${selected.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          note: commentText.trim()
+        })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setIncidents(prev => prev.map(i => i.id === updated.id ? updated : i));
+        setSelected(updated);
+        setCommentText("");
+        push("Comment posted", "success");
+        load();
+      }
+    } catch {
+      push("Failed to post comment", "error");
+    } finally {
+      setPostingComment(false);
+    }
+  };
+
+  const handleWorkspaceFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selected || !e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const fileData = reader.result as string;
+        const res = await fetch(`/api/evidence/${selected.id}/upload`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            fileName: file.name,
+            fileType: file.type || "screenshot",
+            fileData,
+            description: "Evidence uploaded via Analyst Workspace."
+          })
+        });
+        if (res.ok) {
+          push("Evidence uploaded successfully", "success");
+          fetchEvidence();
+          load();
+        } else {
+          const err = await res.json();
+          push(err.message || "Failed to upload", "error");
+        }
+      } catch {
+        push("Failed to upload evidence", "error");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const selDropCls = "bg-[#1a2332] border border-[#1e2d42] hover:border-[#2a3d5a] focus:border-[#4a7aff] focus:outline-none text-xs font-mono text-slate-300 rounded-lg px-3 py-2 transition cursor-pointer";
+  const iocs: { value: string; type: string }[] = selected ? [
+    ...(selected.compromisedIndicators?.ips?.map(v => ({ value: v, type: "ip" })) ?? []),
+    ...(selected.compromisedIndicators?.domains?.map(v => ({ value: v, type: "domain" })) ?? []),
+    ...(selected.compromisedIndicators?.phoneNumbers?.map(v => ({ value: v, type: "phone" })) ?? []),
+  ] : [];
 
   return (
-    <div className="space-y-5" id="case-management">
+    <div className="space-y-5 animate-fade-in" id="case-management">
       <ToastContainer toasts={toasts} />
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
@@ -910,172 +1081,430 @@ export default function CaseManagement({ token, role }: CaseManagementProps) {
         </button>
       </div>
 
-      {/* ── Case List ────────────────────────────────────────────────────── */}
-      <div className="rounded-2xl border overflow-hidden" style={{ borderColor: "#1e2d42", background: "#0d1520" }}>
-        {/* Column headers */}
-        <div className="grid items-center gap-3 px-4 py-2.5 border-b text-[9px] font-mono font-bold uppercase tracking-widest text-slate-600" style={{ gridTemplateColumns: "24px 28px 1fr auto 130px 90px", borderColor: "#1e2d42", background: "#111927" }}>
-          <span />
-          <span />
-          <span>Incident</span>
-          <span>Assignee</span>
-          <span>Progress</span>
-          <span>Actions</span>
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 py-16 text-slate-500 font-mono text-xs">
-            <Loader2 className="w-5 h-5 animate-spin" /> Loading cases…
-          </div>
-        ) : paged.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-600">
-            <ShieldAlert className="w-10 h-10 mb-3 opacity-20" />
-            <p className="text-sm font-mono">No cases match your filters.</p>
-            {(filterSev !== "all" || filterStatus !== "all" || search) && (
-              <button onClick={() => { setFilterSev("all"); setFilterStatus("all"); setSearch(""); }} className="mt-3 text-xs text-[#4a7aff] hover:underline font-mono">
-                Clear filters
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="divide-y" style={{ borderColor: "#1e2d42" }}>
-            {paged.map(inc => {
-              const s = SEV_COLORS[inc.severity as Priority] ?? SEV_COLORS.Low;
-              const progress = getProgress(inc);
-              const isSelected = selectedIds.has(inc.id);
-              const isClosed = ["Resolved", "Closed"].includes(inc.status);
-              return (
-                <div
-                  key={inc.id}
-                  onClick={() => setSelected(inc)}
-                  className={`grid items-center gap-3 px-4 py-3.5 transition-all cursor-pointer group relative ${
-                    isSelected ? "bg-[#1a2a4a]/60" : "hover:bg-[#1a2332]/60"
-                  } ${isClosed ? "opacity-60" : ""}`}
-                  style={{ gridTemplateColumns: "24px 28px 1fr auto 130px 90px" }}
-                >
-                  {/* Left severity accent line */}
-                  <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-r transition-opacity ${s.left} border-l-0`}
-                    style={{ background: inc.severity === "Critical" ? "#ef4444" : inc.severity === "High" ? "#f97316" : inc.severity === "Medium" ? "#eab308" : "#3b82f6" }}
-                  />
-
-                  {/* Checkbox */}
-                  <div className="pl-1" onClick={e => { e.stopPropagation(); toggleSelect(inc.id); }}>
-                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${isSelected ? "bg-[#4a7aff] border-[#4a7aff]" : "border-[#2a3d5a] group-hover:border-[#4a7aff]"}`}>
-                      {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
-                    </div>
-                  </div>
-
-                  {/* Severity dot */}
-                  <div>
-                    <span className={`w-2.5 h-2.5 rounded-full block ${s.dot} ${inc.severity === "Critical" ? "animate-pulse" : ""}`} />
-                  </div>
-
-                  {/* Case info */}
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+      {/* ── Case List / Analyst Workspace ───────────────────────────────── */}
+      {selected ? (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Left Column (25% width): Compact queue */}
+          <div className="lg:col-span-3 space-y-3 max-h-[85vh] overflow-y-auto pr-1">
+            <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+              <h3 className="font-bebas text-sm text-slate-400 tracking-wider">Queue</h3>
+              <span className="text-[10px] bg-white/5 border border-white/10 text-slate-400 px-2 py-0.5 rounded font-mono ml-auto">
+                {filtered.length}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {filtered.map(inc => {
+                const s = SEV_COLORS[inc.severity as Priority] ?? SEV_COLORS.Low;
+                const isCurrentSelected = selected.id === inc.id;
+                return (
+                  <div
+                    key={inc.id}
+                    onClick={() => setSelected(inc)}
+                    className={`p-3 rounded-xl border transition-all cursor-pointer text-left relative ${
+                      isCurrentSelected
+                        ? "bg-[#1a2a4a] border-[#4a7aff]"
+                        : "bg-[#0d1520] border-white/5 hover:border-white/20"
+                    }`}
+                  >
+                    <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-r ${s.left} border-l-0`}
+                      style={{ background: inc.severity === "Critical" ? "#ef4444" : inc.severity === "High" ? "#f97316" : inc.severity === "Medium" ? "#eab308" : "#3b82f6" }}
+                    />
+                    <div className="flex items-center gap-2 mb-1">
                       <span className={`text-[9px] font-mono font-bold ${s.text}`}>{inc.id}</span>
-                      <SevBadge severity={inc.severity as Priority} />
                       <StatusBadge status={inc.status} />
                     </div>
-                    <div className="text-xs font-semibold text-slate-100 truncate group-hover:text-white transition">{inc.title}</div>
-                    <div className="flex items-center gap-3 mt-1 text-[9px] font-mono text-slate-500 flex-wrap">
+                    <div className="text-[11px] font-bold text-slate-200 truncate">{inc.title}</div>
+                    <div className="text-[9px] text-slate-500 font-mono mt-1 flex justify-between">
                       <span>{fmtCat(inc.category)}</span>
-                      <span>·</span>
-                      <span>{inc.reporterOrg}</span>
-                      <span>·</span>
                       <span>{timeAgo(inc.createdAt)}</span>
                     </div>
                   </div>
-
-                  {/* Assignee */}
-                  <div className="text-[10px] font-mono text-slate-400 truncate max-w-[140px]">
-                    {inc.assignedInvestigator ?? <span className="text-slate-600 italic">Unassigned</span>}
-                  </div>
-
-                  {/* Progress */}
-                  <div>
-                    <ProgressBar progress={progress} severity={inc.severity as Priority} />
-                  </div>
-
-                  {/* Action icons */}
-                  <div className="flex items-center gap-1 justify-end" onClick={e => e.stopPropagation()}>
-                    <button
-                      onClick={() => setSelected(inc)}
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 transition"
-                      title="View Details"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleEscalate(inc.id)}
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition"
-                      title="Escalate"
-                    >
-                      <ArrowUp className="w-3.5 h-3.5" />
-                    </button>
-                    <button className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/5 transition" title="More">
-                      <MoreVertical className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ── Pagination ──────────────────────────────────────────────────── */}
-        {!loading && filtered.length > 0 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: "#1e2d42", background: "#111927" }}>
-            <span className="text-[9px] font-mono text-slate-600">
-              Showing {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, filtered.length)} of {filtered.length} cases
-              {selectedIds.size > 0 && ` · ${selectedIds.size} selected`}
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                const p = page <= 3 ? i + 1 : page - 2 + i;
-                if (p < 1 || p > totalPages) return null;
-                return (
-                  <button
-                    key={p}
-                    onClick={() => setPage(p)}
-                    className={`w-7 h-7 rounded-lg text-[11px] font-mono font-bold transition ${
-                      p === page
-                        ? "bg-[#4a7aff] text-white"
-                        : "text-slate-500 hover:text-white hover:bg-white/5"
-                    }`}
-                  >
-                    {p}
-                  </button>
                 );
               })}
-              <button
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
             </div>
           </div>
-        )}
-      </div>
 
-      {/* ── Modals ───────────────────────────────────────────────────────── */}
-      {selected && (
-        <CaseDetailModal
-          incident={selected}
-          onClose={() => setSelected(null)}
-          onEscalate={handleEscalate}
-          onCopy={handleCopy}
-          token={token}
-        />
+          {/* Center Column (45% width): Details & Timeline */}
+          <div className="lg:col-span-6 space-y-4 max-h-[85vh] overflow-y-auto pr-1">
+            <div className="card p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                <div>
+                  <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">{selected.id}</span>
+                  <h2 className="text-sm font-bold text-white mt-1">{selected.title}</h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  <SevBadge severity={selected.severity as Priority} />
+                  <StatusBadge status={selected.status} />
+                </div>
+              </div>
+
+              {/* Workflow stage */}
+              <div className="bg-[#111927] rounded-xl border border-white/5 py-1">
+                <WorkflowTracker status={selected.status} />
+              </div>
+
+              {/* Description & AI summary */}
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block mb-1">Description</label>
+                  <p className="text-xs text-slate-300 leading-relaxed bg-white/2 p-3 rounded-xl border border-white/5 whitespace-pre-wrap">
+                    {selected.description}
+                  </p>
+                </div>
+
+                {iocs.length > 0 && (
+                  <div>
+                    <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block mb-1.5">Extracted IOC Indicators</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {iocs.map((ioc, idx) => <React.Fragment key={idx}><IocTag value={ioc.value} type={ioc.type} /></React.Fragment>)}
+                    </div>
+                  </div>
+                )}
+
+                {selected.mitigationAdvice && (
+                  <div>
+                    <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block mb-1">Mitigation Advice</label>
+                    <div className="p-3 rounded-xl border border-[#FFD600]/20 bg-[#FFD600]/5 text-xs text-[#FFD600] font-mono leading-relaxed">
+                      {selected.mitigationAdvice}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Investigator & Status assignment forms */}
+              <div className="grid grid-cols-2 gap-4 border-t border-white/5 pt-4">
+                <div>
+                  <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block mb-1">Assigned Investigator</label>
+                  <select
+                    value={selected.assignedInvestigator || ""}
+                    onChange={e => handleUpdateField("assigned_investigator", e.target.value || null)}
+                    className="w-full bg-[#1a2332] border border-[#1e2d42] text-xs font-mono text-slate-200 rounded-lg px-2 py-1.5"
+                  >
+                    <option value="">Unassigned</option>
+                    <option value="MACERT Investigator Alpha">MACERT Investigator Alpha</option>
+                    <option value="MACRA Security Analyst">MACRA Security Analyst</option>
+                    <option value="Police CID Inspector">Police CID Inspector (Blantyre)</option>
+                    <option value="SOC Operations Lead">SOC Operations Lead (Lilongwe)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block mb-1">Case Status</label>
+                  <select
+                    value={selected.status}
+                    onChange={e => handleUpdateField("status", e.target.value)}
+                    className="w-full bg-[#1a2332] border border-[#1e2d42] text-xs font-mono text-slate-200 rounded-lg px-2 py-1.5"
+                  >
+                    <option value="Reported">Reported</option>
+                    <option value="Investigating">Investigating</option>
+                    <option value="Contained">Contained</option>
+                    <option value="Resolved">Resolved</option>
+                    <option value="Closed">Closed</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Comment / Note section */}
+              <div className="border-t border-white/5 pt-4 space-y-2">
+                <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block">Add Analyst Note</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Type comment or action note..."
+                    value={commentText}
+                    onChange={e => setCommentText(e.target.value)}
+                    className="flex-1 bg-[#1a2332] border border-[#1e2d42] text-xs font-mono text-slate-200 rounded-lg px-3 py-2 outline-none focus:border-[#4a7aff]"
+                    onKeyDown={e => { if (e.key === "Enter") handleAddComment(); }}
+                  />
+                  <button
+                    onClick={handleAddComment}
+                    disabled={postingComment || !commentText.trim()}
+                    className="px-4 py-2 bg-[#4a7aff] hover:bg-[#6a9aff] text-xs font-mono font-bold text-white rounded-lg transition disabled:opacity-40"
+                  >
+                    Post
+                  </button>
+                </div>
+              </div>
+
+              {/* Activity Timeline log */}
+              <div className="border-t border-white/5 pt-4">
+                <h3 className="text-[9px] font-mono font-bold text-slate-500 uppercase tracking-widest mb-3">Activity & Comments Log</h3>
+                <div className="relative pl-4 border-l border-white/8 space-y-4">
+                  {/* Initial Report Event */}
+                  <div className="relative">
+                    <span className="absolute -left-[21px] w-3 h-3 rounded-full bg-emerald-500 border-2 border-[#0a0e1a] flex items-center justify-center animate-pulse" />
+                    <div className="text-[8px] font-mono text-slate-600 mb-0.5">{fmtDate(selected.incidentDate)}</div>
+                    <div className="text-[10px] font-bold text-slate-200">Incident Reported</div>
+                    <div className="text-[10px] text-slate-400">Filed by {selected.reporterName} ({selected.reporterOrg})</div>
+                  </div>
+                  {/* Timeline Updates */}
+                  {(selected.updates || []).map((u, idx) => (
+                    <div key={idx} className="relative">
+                      <span className="absolute -left-[21px] w-3 h-3 rounded-full bg-blue-500 border-2 border-[#0a0e1a] flex items-center justify-center" />
+                      <div className="text-[8px] font-mono text-slate-600 mb-0.5">{fmtDate(u.timestamp || (u as any).date)}</div>
+                      <div className="text-[10px] font-bold text-slate-200">{u.author}</div>
+                      <div className="text-[10px] text-slate-400">{u.message}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column (30% width): Evidence & Actions */}
+          <div className="lg:col-span-3 space-y-4 max-h-[85vh] overflow-y-auto pr-1">
+            <div className="flex justify-end">
+              <button
+                onClick={() => setSelected(null)}
+                className="px-3 py-1.5 text-[10px] font-mono font-bold text-slate-400 border border-white/10 hover:border-white/20 hover:text-white rounded-lg transition"
+              >
+                Close Case Workspace
+              </button>
+            </div>
+
+            {/* Evidence Vault Files */}
+            <div className="card p-5 space-y-4">
+              <h3 className="font-grotesk font-bold text-xs text-white flex items-center gap-2 border-b border-white/5 pb-3">
+                <FolderOpen className="w-4 h-4 text-blue-400" />
+                Evidence Attachments
+              </h3>
+              {evidenceLoading ? (
+                <div className="text-center py-6 text-slate-600 text-xs font-mono"><Loader2 className="w-4 h-4 animate-spin mx-auto mb-1" /> Loading evidence...</div>
+              ) : evidenceList.length === 0 ? (
+                <div className="text-center py-6 text-slate-600 text-xs font-mono">No evidence files uploaded.</div>
+              ) : (
+                <div className="space-y-2">
+                  {evidenceList.map(evd => (
+                    <div key={evd.id} className="p-2.5 bg-white/2 border border-white/5 rounded-lg flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-mono font-bold text-slate-200 truncate" title={evd.file_name}>{evd.file_name}</p>
+                        <p className="text-[8px] text-slate-500 font-mono">{(evd.file_size / 1024).toFixed(1)} KB · {evd.file_type}</p>
+                      </div>
+                      <a
+                        href={`/api/evidence/${selected.id}/${evd.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1 rounded hover:bg-white/5 text-blue-400 hover:text-blue-300"
+                        title="Download Evidence"
+                        download
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* File Upload Area */}
+              <div className="border-t border-white/5 pt-4 space-y-3">
+                <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest block">Upload Evidence</label>
+                <input
+                  type="file"
+                  id="workspace-file-upload"
+                  onChange={handleWorkspaceFileUpload}
+                  className="hidden"
+                />
+                <label
+                  htmlFor="workspace-file-upload"
+                  className="flex flex-col items-center justify-center p-4 border border-dashed border-white/10 hover:border-[#4a7aff]/40 hover:bg-[#4a7aff]/5 rounded-xl cursor-pointer transition text-center group"
+                >
+                  <Plus className="w-5 h-5 text-slate-500 group-hover:text-[#4a7aff] mb-1" />
+                  <span className="text-[10px] font-mono font-bold text-slate-400 group-hover:text-slate-200">Choose Evidence File</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Response Actions Playbook */}
+            <div className="card p-5 space-y-4">
+              <h3 className="font-grotesk font-bold text-xs text-white flex items-center gap-2 border-b border-white/5 pb-3">
+                <Zap className="w-4 h-4 text-[#FFD600]" />
+                Response Actions
+              </h3>
+              <div className="space-y-2">
+                <button
+                  onClick={() => { push("SMS warning broadcasted to affected telecom subscribers.", "success"); }}
+                  className="w-full flex items-center gap-2 p-2.5 rounded-lg border text-[10px] font-mono font-bold text-left transition bg-orange-500/10 border-orange-500/20 text-orange-400 hover:bg-orange-500/15"
+                >
+                  📱 SMS Telecom Alert
+                </button>
+                <button
+                  onClick={() => { push("IP addresses blocked on ESCOM gateway firewall.", "success"); }}
+                  className="w-full flex items-center gap-2 p-2.5 rounded-lg border text-[10px] font-mono font-bold text-left transition bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/15"
+                >
+                  🔒 Deploy Gateway Blocks
+                </button>
+                <button
+                  onClick={() => { push("E-mail security advisories dispatched to MACRA banks.", "success"); }}
+                  className="w-full flex items-center gap-2 p-2.5 rounded-lg border text-[10px] font-mono font-bold text-left transition bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/15"
+                >
+                  ✉ Send Bank Advisories
+                </button>
+                <button
+                  onClick={() => handleEscalate(selected.id)}
+                  className="w-full flex items-center gap-2 p-2.5 rounded-lg border text-[10px] font-mono font-bold text-left transition bg-red-500/15 border-red-500/30 text-red-400 hover:bg-red-500/25"
+                >
+                  🚨 Escalate Alert Level
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-2xl border overflow-hidden" style={{ borderColor: "#1e2d42", background: "#0d1520" }}>
+          {/* Column headers */}
+          <div className="grid items-center gap-3 px-4 py-2.5 border-b text-[9px] font-mono font-bold uppercase tracking-widest text-slate-600" style={{ gridTemplateColumns: "24px 28px 1fr auto 130px 90px", borderColor: "#1e2d42", background: "#111927" }}>
+            <span />
+            <span />
+            <span>Incident</span>
+            <span>Assignee</span>
+            <span>Progress</span>
+            <span>Actions</span>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-slate-500 font-mono text-xs">
+              <Loader2 className="w-5 h-5 animate-spin" /> Loading cases…
+            </div>
+          ) : paged.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-slate-600">
+              <ShieldAlert className="w-10 h-10 mb-3 opacity-20" />
+              <p className="text-sm font-mono">No cases match your filters.</p>
+              {(filterSev !== "all" || filterStatus !== "all" || search) && (
+                <button onClick={() => { setFilterSev("all"); setFilterStatus("all"); setSearch(""); }} className="mt-3 text-xs text-[#4a7aff] hover:underline font-mono">
+                  Clear filters
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="divide-y" style={{ borderColor: "#1e2d42" }}>
+              {paged.map(inc => {
+                const s = SEV_COLORS[inc.severity as Priority] ?? SEV_COLORS.Low;
+                const progress = getProgress(inc);
+                const isSelected = selectedIds.has(inc.id);
+                const isClosed = ["Resolved", "Closed"].includes(inc.status);
+                return (
+                  <div
+                    key={inc.id}
+                    onClick={() => setSelected(inc)}
+                    className={`grid items-center gap-3 px-4 py-3.5 transition-all cursor-pointer group relative ${
+                      isSelected ? "bg-[#1a2a4a]/60" : "hover:bg-[#1a2332]/60"
+                    } ${isClosed ? "opacity-60" : ""}`}
+                    style={{ gridTemplateColumns: "24px 28px 1fr auto 130px 90px" }}
+                  >
+                    {/* Left severity accent line */}
+                    <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-r transition-opacity ${s.left} border-l-0`}
+                      style={{ background: inc.severity === "Critical" ? "#ef4444" : inc.severity === "High" ? "#f97316" : inc.severity === "Medium" ? "#eab308" : "#3b82f6" }}
+                    />
+
+                    {/* Checkbox */}
+                    <div className="pl-1" onClick={e => { e.stopPropagation(); toggleSelect(inc.id); }}>
+                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${isSelected ? "bg-[#4a7aff] border-[#4a7aff]" : "border-[#2a3d5a] group-hover:border-[#4a7aff]"}`}>
+                        {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
+                      </div>
+                    </div>
+
+                    {/* Severity dot */}
+                    <div>
+                      <span className={`w-2.5 h-2.5 rounded-full block ${s.dot} ${inc.severity === "Critical" ? "animate-pulse" : ""}`} />
+                    </div>
+
+                    {/* Case info */}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                        <span className={`text-[9px] font-mono font-bold ${s.text}`}>{inc.id}</span>
+                        <SevBadge severity={inc.severity as Priority} />
+                        <StatusBadge status={inc.status} />
+                      </div>
+                      <div className="text-xs font-semibold text-slate-100 truncate group-hover:text-white transition">{inc.title}</div>
+                      <div className="flex items-center gap-3 mt-1 text-[9px] font-mono text-slate-500 flex-wrap">
+                        <span>{fmtCat(inc.category)}</span>
+                        <span>·</span>
+                        <span>{inc.reporterOrg}</span>
+                        <span>·</span>
+                        <span>{timeAgo(inc.createdAt)}</span>
+                      </div>
+                    </div>
+
+                    {/* Assignee */}
+                    <div className="text-[10px] font-mono text-slate-400 truncate max-w-[140px]">
+                      {inc.assignedInvestigator ?? <span className="text-slate-600 italic">Unassigned</span>}
+                    </div>
+
+                    {/* Progress */}
+                    <div>
+                      <ProgressBar progress={progress} severity={inc.severity as Priority} />
+                    </div>
+
+                    {/* Action icons */}
+                    <div className="flex items-center gap-1 justify-end" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={() => setSelected(inc)}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 transition"
+                        title="View Details"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleEscalate(inc.id)}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition"
+                        title="Escalate"
+                      >
+                        <ArrowUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/5 transition" title="More">
+                        <MoreVertical className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Pagination ──────────────────────────────────────────────────── */}
+          {!loading && filtered.length > 0 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: "#1e2d42", background: "#111927" }}>
+              <span className="text-[9px] font-mono text-slate-600">
+                Showing {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, filtered.length)} of {filtered.length} cases
+                {selectedIds.size > 0 && ` · ${selectedIds.size} selected`}
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  const p = page <= 3 ? i + 1 : page - 2 + i;
+                  if (p < 1 || p > totalPages) return null;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p)}
+                      className={`w-7 h-7 rounded-lg text-[11px] font-mono font-bold transition ${
+                        p === page
+                          ? "bg-[#4a7aff] text-white"
+                          : "text-slate-500 hover:text-white hover:bg-white/5"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
+
       {newOpen && (
         <NewCaseModal
           onClose={() => setNewOpen(false)}
@@ -1086,3 +1515,4 @@ export default function CaseManagement({ token, role }: CaseManagementProps) {
     </div>
   );
 }
+

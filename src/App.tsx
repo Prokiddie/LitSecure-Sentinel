@@ -33,7 +33,7 @@ const RoleConsole = lazy(() => import("./components/RoleConsole"));
 const LiveFeed = lazy(() => import("./components/LiveFeed"));
 const ThreatIntelDatabase = lazy(() => import("./components/ThreatIntelDatabase"));
 const AnalyticsDashboard = lazy(() => import("./components/AnalyticsDashboard"));
-const CctvSurveillance = lazy(() => import("./components/CctvSurveillance"));
+const CCTVSurveillance = lazy(() => import("./components/CctvSurveillance"));
 const DatabaseConsole = lazy(() => import("./components/DatabaseConsole"));
 const AiThreatAnalysis = lazy(() => import("./components/AiThreatAnalysis"));
 const SituationRoom = lazy(() => import("./components/SituationRoom"));
@@ -66,6 +66,7 @@ const AiTriageEngine = lazy(() => import("./components/AiTriageEngine"));
 const SiemCorrelation = lazy(() => import("./components/SiemCorrelation"));
 const RedTeamDashboard = lazy(() => import("./components/RedTeamDashboard"));
 const UserProfile = lazy(() => import("./components/UserProfile"));
+const ExecutiveDashboard = lazy(() => import("./components/ExecutiveDashboard"));
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 interface AuthUser { id: string; email: string; name: string; role: string; phone?: string; mfa_enabled?: boolean; }
@@ -87,50 +88,90 @@ function getStoredAuth(): { token: string | null; user: AuthUser | null } {
 // investigator → case-focused:   portal, command, situation, riskmap, campaigns, cctv, logs, evidence, cyberintel, netintel, reports, awareness
 // auditor      → read-only view: portal, logs, intel, analytics, scoring, reports, awareness
 const TABS = [
+  { id: "executive", icon: BarChart3,   label: "Executive Dashboard",   short: "Executive",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator","auditor"] },
   { id: "portal",    icon: ShieldCheck, label: "Incident Portal",      short: "Portal",      allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator","auditor","org_user"] },
-  { id: "command",   icon: Terminal,    label: "Threat Terminal",       short: "Terminal",    allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"] },
-  { id: "cyberterm", icon: Code2,       label: "Cyber Terminal",        short: "CyberTerm",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager"] },
-  { id: "situation", icon: Radio,       label: "Situation Room",        short: "Situation",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"] },
+  { id: "command",   icon: Terminal,    label: "Threat Terminal",       short: "Terminal",    allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"], mvpHidden: true },
+  { id: "cyberterm", icon: Code2,       label: "Cyber Terminal",        short: "CyberTerm",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager"], mvpHidden: true },
+  { id: "situation", icon: Radio,       label: "Situation Room",        short: "Situation",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"], mvpHidden: true },
   { id: "riskmap",   icon: MapPin,      label: "National Risk Map",     short: "Risk Map",    allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator","auditor"] },
-  { id: "campaigns", icon: Zap,         label: "Campaign Correlation",  short: "Campaigns",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator"] },
-  { id: "scoring",   icon: TrendingUp,  label: "Sector Risk Scores",    short: "Scoring",     allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","auditor"] },
-  { id: "edr",       icon: Monitor,     label: "EDR Endpoint",          short: "EDR",         allowedRoles: ["admin","super_admin","gov_admin","soc_manager"] },
-  { id: "rules",     icon: Code2,       label: "Rules Orchestrator",    short: "Rules",       allowedRoles: ["admin","super_admin","gov_admin","soc_manager"] },
-  { id: "cctv",      icon: Video,       label: "CCTV Surveillance",     short: "CCTV",        allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"] },
-  { id: "logs",      icon: Activity,    label: "Infrastructure Logs",   short: "Logs",        allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator","auditor"] },
+  { id: "campaigns", icon: Zap,         label: "Campaign Correlation",  short: "Campaigns",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator"], mvpHidden: true },
+  { id: "scoring",   icon: TrendingUp,  label: "Sector Risk Scores",    short: "Scoring",     allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","auditor"], mvpHidden: true },
+  { id: "edr",       icon: Monitor,     label: "EDR Endpoint",          short: "EDR",         allowedRoles: ["admin","super_admin","gov_admin","soc_manager"], mvpHidden: true },
+  { id: "rules",     icon: Code2,       label: "Rules Orchestrator",    short: "Rules",       allowedRoles: ["admin","super_admin","gov_admin","soc_manager"], mvpHidden: true },
+  { id: "cctv",      icon: Video,       label: "CCTV Surveillance",     short: "CCTV",        allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"], mvpHidden: true },
+  { id: "logs",      icon: Activity,    label: "Infrastructure Logs",   short: "Logs",        allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator","auditor"], mvpHidden: true },
   { id: "intel",     icon: Globe,       label: "Threat Intelligence",   short: "Intel",       allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","auditor"] },
   { id: "analytics", icon: BarChart3,   label: "National Analytics",    short: "Analytics",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","auditor"] },
   { id: "patterns",  icon: Activity,    label: "Pattern Intelligence",  short: "Patterns",    allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst"] },
   { id: "reports",   icon: FileText,    label: "Reports",               short: "Reports",     allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator","auditor"] },
   { id: "evidence",  icon: FolderLock,  label: "Evidence Vault",        short: "Evidence",    allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"] },
-  { id: "settings",  icon: Settings,    label: "Integrations",          short: "Settings",    allowedRoles: ["admin","super_admin","gov_admin","soc_manager"] },
+  { id: "settings",  icon: Settings,    label: "Integrations",          short: "Settings",    allowedRoles: ["admin","super_admin","gov_admin","soc_manager"], mvpHidden: true },
   { id: "awareness", icon: BookOpen,    label: "Awareness Hub",         short: "Awareness",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator","auditor","org_user"] },
-  { id: "database",  icon: Database,    label: "Database Console",      short: "Database",    allowedRoles: ["admin","super_admin"] },
+  { id: "database",  icon: Database,    label: "Database Console",      short: "Database",    allowedRoles: ["admin","super_admin"], mvpHidden: true },
   { id: "users",     icon: Users,       label: "User Management",       short: "Users",       allowedRoles: ["admin","super_admin"] },
-  { id: "social",    icon: Wifi,        label: "Social Monitor",        short: "Social",      allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst"] },
+  { id: "social",    icon: Wifi,        label: "Social Monitor",        short: "Social",      allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst"], mvpHidden: true },
   { id: "cyberintel",icon: ShieldCheck, label: "Cyber Intel Hub",        short: "Cyber Intel", allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst"], badge: "NEW" },
-  { id: "netintel",  icon: Wifi,        label: "Network Intelligence",   short: "Net Intel",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"], badge: "NEW" },
+  { id: "netintel",  icon: Wifi,        label: "Network Intelligence",   short: "Net Intel",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"], badge: "NEW", mvpHidden: true },
   { id: "globalmap", icon: Globe,       label: "Global Threat Map",      short: "Global Map",  allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst"], badge: "P1" },
-  { id: "policies",   icon: ShieldCheck,  label: "Policy Engine",          short: "Policies",    allowedRoles: ["admin","super_admin","gov_admin","soc_manager"], badge: "P2" },
-  { id: "takedown",   icon: Globe,        label: "Takedown Tracker",        short: "Takedowns",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"], badge: "P2" },
-  { id: "reputation", icon: ShieldCheck,  label: "Reputation Checker",      short: "Reputation",  allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator"], badge: "P2" },
+  { id: "policies",   icon: ShieldCheck,  label: "Policy Engine",          short: "Policies",    allowedRoles: ["admin","super_admin","gov_admin","soc_manager"], badge: "P2", mvpHidden: true },
+  { id: "takedown",   icon: Globe,        label: "Takedown Tracker",        short: "Takedowns",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"], badge: "P2", mvpHidden: true },
+  { id: "reputation", icon: ShieldCheck,  label: "Reputation Checker",      short: "Reputation",  allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator"], badge: "P2", mvpHidden: true },
   { id: "training",   icon: BookOpen,     label: "Awareness Training",      short: "Training",    allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator","auditor","org_user"], badge: "P3" },
-  { id: "stix",       icon: Globe,        label: "STIX/TAXII Export",        short: "STIX",        allowedRoles: ["admin","super_admin","gov_admin","soc_manager"], badge: "P3" },
+  { id: "stix",       icon: Globe,        label: "STIX/TAXII Export",        short: "STIX",        allowedRoles: ["admin","super_admin","gov_admin","soc_manager"], badge: "P3", mvpHidden: true },
   { id: "incidentmgr",icon: FileText,     label: "Incident Manager",          short: "Inc. Mgr",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator"], badge: "NEW" },
   { id: "ailearn",    icon: Brain,        label: "AI Learning Center",        short: "AI Learn",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator"], badge: "ML" },
   { id: "casemgmt",   icon: FolderOpen,   label: "Case Management",            short: "Cases",      allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator"], badge: "NEW" },
   { id: "mitre",      icon: Crosshair,    label: "MITRE ATT&CK Navigator",     short: "ATT&CK",     allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator"], badge: "NEW" },
-  { id: "soar",       icon: Zap,          label: "SOAR Playbooks",             short: "SOAR",       allowedRoles: ["admin","super_admin","gov_admin","soc_manager"],                         badge: "AI" },
+  { id: "soar",       icon: Zap,          label: "SOAR Playbooks",             short: "SOAR",       allowedRoles: ["admin","super_admin","gov_admin","soc_manager"],                         badge: "AI", mvpHidden: true },
   { id: "triage",     icon: Brain,        label: "AI Triage Engine",           short: "AI Triage",  allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst"],               badge: "AI" },
-  { id: "siem",       icon: Database,     label: "SIEM Correlation",           short: "SIEM",       allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"],        badge: "NEW" },
-  { id: "redteam",    icon: Crosshair,    label: "Red Team Engine",             short: "Red Team",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"],        badge: "🔴" },
+  { id: "siem",       icon: Database,     label: "SIEM Correlation",           short: "SIEM",       allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"],        badge: "NEW", mvpHidden: true },
+  { id: "redteam",    icon: Crosshair,    label: "Red Team Engine",             short: "Red Team",   allowedRoles: ["admin","super_admin","gov_admin","soc_manager","investigator"],        badge: "🔴", mvpHidden: true },
   { id: "profile",    icon: User,         label: "User Profile",               short: "Profile",    allowedRoles: ["admin","super_admin","gov_admin","soc_manager","analyst","investigator","auditor","org_user"] },
 ] as const;
+
+const NAV_CATEGORIES = [
+  {
+    id: "executive",
+    label: "Executive Dashboard",
+    icon: BarChart3,
+    childTabIds: ["executive"]
+  },
+  {
+    id: "operations",
+    label: "Incident Operations",
+    icon: ShieldCheck,
+    childTabIds: ["portal", "casemgmt", "evidence", "incidentmgr", "triage"]
+  },
+  {
+    id: "situation",
+    label: "Situation Room",
+    icon: Radio,
+    childTabIds: ["situation"]
+  },
+  {
+    id: "intelligence",
+    label: "Intelligence Center",
+    icon: Globe,
+    childTabIds: ["cyberintel", "riskmap", "mitre", "reputation", "ailearn", "globalmap", "intel", "patterns", "scoring", "campaigns", "stix"]
+  },
+  {
+    id: "admin",
+    label: "Administration",
+    icon: Settings,
+    childTabIds: ["users", "database", "logs", "policies", "rules", "soar", "edr", "cctv", "siem", "redteam"]
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    icon: User,
+    childTabIds: ["settings", "profile", "training", "awareness"]
+  }
+];
 type TabId = typeof TABS[number]["id"];
 
 // Filter tabs visible for a given role
 function getVisibleTabs(role: string) {
-  return TABS.filter(t => (t as any).allowedRoles?.includes(role) ?? true);
+  return TABS.filter(t => !(t as any).mvpHidden && ((t as any).allowedRoles?.includes(role) ?? true));
 }
 
 // ─── LiveSectorNodes ─────────────────────────────────────────────────────────
@@ -214,7 +255,7 @@ function LiveSectorNodes() {
       <div className="flex items-center justify-between border-b border-white/5 pb-3">
         <h4 className="font-grotesk font-bold text-sm text-white flex items-center gap-2">
           <div className="w-1 h-4 bg-emerald-400 rounded" />
-          Sector Integration Nodes
+          Sector Integration Nodes (MVP Mode)
         </h4>
         <div className="flex items-center gap-2">
           <span className="text-[9px] font-mono text-slate-500">{connectedCount}/{nodes.length} online</span>
@@ -252,8 +293,8 @@ function LiveSectorNodes() {
         })}
       </div>
 
-      <p className="text-[9px] text-slate-700 font-mono border-t border-white/5 pt-2">
-        Last checked: {lastChecked.toLocaleTimeString()} · Auto-refresh: 15s
+      <p className="text-[9px] text-slate-500 font-mono border-t border-white/5 pt-2">
+        MVP Mode: Live integrations suspended to conserve resources. Simulated telemetry active.
       </p>
     </div>
   );
@@ -352,6 +393,7 @@ function AppContent({ auth, onLogout, onUpdateUser }: { auth: { token: string; u
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
+  const [escalatedIncidentId, setEscalatedIncidentId] = useState<string | null>(null);
 
   const liveStats = useRealTimeStats();
   const handleLogout = onLogout;
@@ -496,7 +538,7 @@ function AppContent({ auth, onLogout, onUpdateUser }: { auth: { token: string; u
                 <img src="/coat_of_arms.jpg" alt="Malawi Coat of Arms" className="w-6 h-6 object-contain" />
                 <div>
                   <div className="text-[7px] font-mono text-slate-600 uppercase tracking-widest">Republic of Malawi</div>
-                  <div className="text-[8px] font-mono text-slate-400 font-bold leading-none">Nat. Cyber Defense</div>
+                  <div className="text-[8px] font-mono text-slate-400 font-bold leading-none">Incident Response Node</div>
                 </div>
               </div>
               <div className="w-px h-6 bg-white/8" />
@@ -559,85 +601,66 @@ function AppContent({ auth, onLogout, onUpdateUser }: { auth: { token: string; u
 
             {/* ── Tabs with hover-reveal submenus (item 3) ── */}
             <nav className="tab-nav-scroll">
-              {visibleTabs.map(tab => {
-                const Icon = tab.icon;
-                const active = activeTab === tab.id;
+              {NAV_CATEGORIES.map(category => {
+                // Filter childTabIds against user's visibleTabs
+                const visibleChildren = category.childTabIds
+                  .map(cid => visibleTabs.find(t => t.id === cid))
+                  .filter(Boolean) as any[];
 
-                // Define submenu items per tab
-                const submenus: Record<string, { label: string; emoji: string; action: () => void }[]> = {
-                  portal: [
-                    { label: `New Cases (${incidents.filter(i=>i.status==="Reported").length})`, emoji: "🆕", action: () => setActiveTab("portal" as TabId) },
-                    { label: "Assigned",  emoji: "👤", action: () => setActiveTab("portal" as TabId) },
-                    { label: "Escalated", emoji: "🚨", action: () => setActiveTab("portal" as TabId) },
-                    { label: "Resolved",  emoji: "✅", action: () => setActiveTab("portal" as TabId) },
-                  ],
-                  situation: [
-                    { label: `L1 Critical (${incidents.filter(i=>i.severity==="Critical").length})`, emoji: "🔴", action: () => setActiveTab("situation" as TabId) },
-                    { label: `L2 Active (${incidents.filter(i=>i.severity==="High").length})`,    emoji: "🟠", action: () => setActiveTab("situation" as TabId) },
-                    { label: `L3 Monitoring (${incidents.filter(i=>i.severity==="Medium").length})`, emoji: "🟡", action: () => setActiveTab("situation" as TabId) },
-                    { label: "EOC War Room", emoji: "🎯", action: () => setActiveTab("situation" as TabId) },
-                  ],
-                  intel: [
-                    { label: "IOC Extractor",  emoji: "🔍", action: () => setActiveTab("intel" as TabId) },
-                    { label: "MITRE ATT&CK Map", emoji: "📊", action: () => setActiveTab("intel" as TabId) },
-                    { label: "AI Triage",       emoji: "🤖", action: () => setActiveTab("intel" as TabId) },
-                    { label: "Trend Analysis",  emoji: "📈", action: () => setActiveTab("analytics" as TabId) },
-                  ],
-                  analytics: [
-                    { label: "Real-time", emoji: "⚡", action: () => setActiveTab("analytics" as TabId) },
-                    { label: "Weekly",    emoji: "📅", action: () => setActiveTab("analytics" as TabId) },
-                    { label: "Monthly",   emoji: "🗓",  action: () => setActiveTab("analytics" as TabId) },
-                    { label: "Year-over-Year", emoji: "📊", action: () => setActiveTab("analytics" as TabId) },
-                  ],
-                  campaigns: [
-                    { label: "All Campaigns",  emoji: "🗂", action: () => setActiveTab("campaigns" as TabId) },
-                    { label: "Phishing",       emoji: "🎣", action: () => setActiveTab("campaigns" as TabId) },
-                    { label: "SIM Swap",       emoji: "📱", action: () => setActiveTab("campaigns" as TabId) },
-                    { label: "Ransomware",     emoji: "🔒", action: () => setActiveTab("campaigns" as TabId) },
-                  ],
-                };
+                if (visibleChildren.length === 0) return null;
 
-                const items = (submenus as any)[tab.id];
+                // Category is active if any of its children are the activeTab
+                const isCategoryActive = visibleChildren.some(child => activeTab === child.id);
+                const Icon = category.icon;
+
+                // If only 1 child, clicking category selects that child.
+                // If multiple, clicking selects the first child.
+                const defaultChildId = visibleChildren[0].id;
 
                 return (
-                  <div key={tab.id} className="tab-hover-group">
+                  <div key={category.id} className="tab-hover-group">
                     <button
-                      id={`tab-btn-${tab.id}`}
-                      onClick={() => setActiveTab(tab.id as TabId)}
+                      id={`cat-btn-${category.id}`}
+                      onClick={() => setActiveTab(defaultChildId as TabId)}
                       className={`relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded transition whitespace-nowrap border-b-2 ${
-                        active
+                        isCategoryActive
                           ? "text-[#FFD600] border-[#FFD600] bg-[#FFD600]/5"
                           : "text-slate-400 border-transparent hover:text-slate-200 hover:border-white/20"
                       }`}
                     >
-                      <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-[#FFD600]" : ""}`} />
-                      <span className="hidden lg:block">{tab.label}</span>
-                      <span className="lg:hidden">{tab.short}</span>
-                      {(tab as any).badge && (
-                        <span className="ml-0.5 text-[8px] font-bold bg-[#FFD600] text-[#05080F] px-1.5 py-0.5 rounded-full leading-none">{(tab as any).badge}</span>
-                      )}
-                      {items && <span className="ml-0.5 text-slate-600 text-[8px]">▾</span>}
+                      <Icon className={`w-3.5 h-3.5 shrink-0 ${isCategoryActive ? "text-[#FFD600]" : ""}`} />
+                      <span className="hidden lg:block">{category.label}</span>
+                      <span className="lg:hidden">{category.label.split(" ")[0]}</span>
+                      {visibleChildren.length > 1 && <span className="ml-0.5 text-slate-600 text-[8px]">▾</span>}
                     </button>
 
-                    {/* Hover submenu (item 3) */}
-                    {items && (
+                    {/* Hover submenu for children */}
+                    {visibleChildren.length > 1 && (
                       <div className="tab-submenu">
-                        {items.map((item: any, i: number) => (
-                          <div key={i}>
-                            {item.divider
-                              ? <div className="tab-submenu-divider" />
-                              : (
-                                <div
-                                  className="tab-submenu-item"
-                                  onClick={item.action}
-                                >
-                                  <span>{item.emoji}</span>
-                                  <span>{item.label}</span>
-                                </div>
-                              )
-                            }
-                          </div>
-                        ))}
+                        {visibleChildren.map((child: any) => {
+                          const ChildIcon = child.icon;
+                          const isChildActive = activeTab === child.id;
+                          return (
+                            <div
+                              key={child.id}
+                              className={`tab-submenu-item flex items-center gap-2 px-3 py-2 text-[10px] font-mono transition-colors cursor-pointer ${
+                                isChildActive ? "text-[#FFD600] bg-white/5" : "text-slate-400 hover:text-white hover:bg-[#1a2332]"
+                              }`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveTab(child.id as TabId);
+                              }}
+                            >
+                              <ChildIcon className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                              <span>{child.label}</span>
+                              {child.badge && (
+                                <span className="ml-auto text-[7px] font-bold bg-[#FFD600] text-[#05080F] px-1.5 py-0.5 rounded-full leading-none">
+                                  {child.badge}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -749,7 +772,7 @@ function AppContent({ auth, onLogout, onUpdateUser }: { auth: { token: string; u
                 PROTECTING <span className="text-[#FFD600]">MALAWI'S</span><br />DIGITAL INFRASTRUCTURE
               </h1>
               <p className="text-slate-300 text-sm max-w-xl font-grotesk leading-relaxed mb-8">
-                Submit cyber incident reports, monitor live CCTV feeds, and coordinate national threat responses across Malawi's telecoms, banking, and government nodes.
+                Submit cyber incident reports, analyze digital threats, and coordinate incident response triage across Malawi's banking, telecoms, and government networks.
               </p>
 
               {/* Stats — from live hook */}
@@ -807,7 +830,15 @@ function AppContent({ auth, onLogout, onUpdateUser }: { auth: { token: string; u
               {activeTab === "portal" && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                 <div className="lg:col-span-8 space-y-6">
-                  <TriageWorkspace token={auth.token ?? ""} role={auth.user?.role ?? "analyst"} activeAgency={activeAgency} />
+                  <TriageWorkspace
+                    token={auth.token ?? ""}
+                    role={auth.user?.role ?? "analyst"}
+                    activeAgency={activeAgency}
+                    onEscalateToCase={(id) => {
+                      setEscalatedIncidentId(id);
+                      setActiveTab("casemgmt");
+                    }}
+                  />
                   <PortalDashboard incidents={incidents} stats={stats || liveStats} />
                 </div>
                 <div className="lg:col-span-4 space-y-4">
@@ -820,7 +851,7 @@ function AppContent({ auth, onLogout, onUpdateUser }: { auth: { token: string; u
                       Our Mission
                     </h4>
                     <p className="text-slate-400 text-xs leading-relaxed">
-                      LitSecure Sentinel is Malawi's national cyber-defense platform — a unified intelligence node connecting <span className="text-slate-200 font-semibold">MACRA</span>, <span className="text-slate-200 font-semibold">MACERT</span>, the <span className="text-slate-200 font-semibold">Malawi Police Cybercrime Unit</span>, and Malawi Defense Cyber-Cell to protect citizens, telecoms, and government institutions from digital threats in real time.
+                      LitSecure Sentinel is Malawi's AI-powered cyber incident reporting and response platform — a unified portal connecting citizens, <span className="text-slate-200 font-semibold">MACRA</span>, <span className="text-slate-200 font-semibold">MACERT</span>, and the <span className="text-slate-200 font-semibold">Malawi Police Cybercrime Unit</span> to report, classify, and mitigate cyber threats in real time.
                     </p>
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {["24/7 Monitoring", "AI-Powered", "Encrypted Pipeline", "National Reach"].map(tag => (
@@ -935,7 +966,7 @@ function AppContent({ auth, onLogout, onUpdateUser }: { auth: { token: string; u
             {activeTab === "scoring"   && <SectorRiskScoring />}
             {activeTab === "edr"       && <EdrEndpointProtection />}
             {activeTab === "rules"     && <SecurityRulesOrchestrator />}
-            {activeTab === "cctv"      && <CctvSurveillance />}
+            {activeTab === "cctv"      && <CCTVSurveillance />}
             {activeTab === "logs"      && <LiveFeed />}
             {activeTab === "intel"     && <ThreatIntelDatabase />}
             {activeTab === "analytics" && stats && <AnalyticsDashboard stats={stats} />}
@@ -963,7 +994,15 @@ function AppContent({ auth, onLogout, onUpdateUser }: { auth: { token: string; u
             {activeTab === "stix"        && <StixExportPanel />}
             {activeTab === "incidentmgr" && <IncidentReportManager token={auth.token!} role={role} />}
             {activeTab === "ailearn"    && <AiLearningPanel token={auth.token!} role={role} />}
-            {activeTab === "casemgmt"   && <CaseManagement  token={auth.token!} role={role} />}
+            {activeTab === "casemgmt"   && (
+              <CaseManagement
+                token={auth.token!}
+                role={role}
+                initialSelectedIncidentId={escalatedIncidentId}
+                onClearInitialSelection={() => setEscalatedIncidentId(null)}
+              />
+            )}
+            {activeTab === "executive"  && <ExecutiveDashboard incidents={incidents} stats={stats || liveStats} />}
             {activeTab === "mitre"      && <MitreAttackNavigator />}
             {activeTab === "soar"       && <SoarPlaybookEngine />}
             {activeTab === "triage"     && <AiTriageEngine />}
@@ -981,7 +1020,7 @@ function AppContent({ auth, onLogout, onUpdateUser }: { auth: { token: string; u
           <div className="max-w-[1600px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <LitSecureIcon size={18} />
-              <span>LitSecure Sentinel v1.4 • Malawi Defense Coordinated Node</span>
+              <span>LitSecure Sentinel v1.4 • Malawi Cyber Incident Response Coordinated Node</span>
             </div>
             <div className="flex items-center gap-5">
               <span>MACRA SEC-80B</span>

@@ -9,9 +9,10 @@ import React, { useState } from "react";
 import {
   Shield, Send, Loader2, CheckCircle, AlertTriangle,
   Phone, Globe, Activity, Smartphone, Lock, Eye, Bell,
-  ChevronLeft, ExternalLink, ArrowRight, Info
+  ChevronLeft, ExternalLink, ArrowRight, Info, Upload, X, Paperclip
 } from "lucide-react";
 import { LitSecureWordmark } from "./LitSecureLogo";
+import CitizenReportTracker from "./CitizenReportTracker";
 
 interface PublicReportPageProps {
   onGoToLogin: () => void;
@@ -38,12 +39,22 @@ export default function PublicReportPage({ onGoToLogin }: PublicReportPageProps)
   const [isSubmitting,   setIsSubmitting]   = useState(false);
   const [result,         setResult]         = useState<any | null>(null);
   const [error,          setError]          = useState<string | null>(null);
+  const [selectedFiles,  setSelectedFiles]  = useState<File[]>([]);
 
   // ── Track tab ──────────────────────────────────────────────────────────────
   const [trackId,   setTrackId]   = useState("");
   const [trackData, setTrackData] = useState<any | null>(null);
   const [tracking,  setTracking]  = useState(false);
   const [view,      setView]      = useState<"report" | "track">("report");
+
+  const convertToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = error => reject(error);
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +65,12 @@ export default function PublicReportPage({ onGoToLogin }: PublicReportPageProps)
     setIsSubmitting(true);
     setError(null);
     try {
+      const filePromises = selectedFiles.map(async (f) => {
+        const base64 = await convertToBase64(f);
+        return { fileName: f.name, fileType: f.type || "screenshot", fileData: base64 };
+      });
+      const filesPayload = await Promise.all(filePromises);
+
       const resp = await fetch("/api/public/report", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
@@ -63,6 +80,7 @@ export default function PublicReportPage({ onGoToLogin }: PublicReportPageProps)
           affectedUsers: affectedUsers ? Number(affectedUsers) : 0,
           estimatedLoss: estimatedLoss ? Number(estimatedLoss) : 0,
           source: "Public Web Portal",
+          files: filesPayload,
         }),
       });
       const data = await resp.json();
@@ -71,6 +89,7 @@ export default function PublicReportPage({ onGoToLogin }: PublicReportPageProps)
       // reset form
       setTitle(""); setDescription(""); setReporterName(""); setReporterContact("");
       setSector(""); setAffectedUsers(""); setEstimatedLoss("");
+      setSelectedFiles([]);
     } catch (err: any) {
       setError(err.message || "Unable to submit. Please try again or call MACERT: 112.");
     } finally {
@@ -150,7 +169,7 @@ export default function PublicReportPage({ onGoToLogin }: PublicReportPageProps)
           <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/25 rounded-full px-4 py-1 mb-4">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-emerald-400 text-[10px] font-mono font-bold tracking-widest uppercase">
-              MACRA / MACERT — National Cyber Crime Reporting
+              MACRA / MACERT — Cyber Incident Reporting & Response
             </span>
           </div>
           <h1 className="font-bebas text-5xl leading-none text-white mb-3 tracking-wide">
@@ -334,6 +353,48 @@ export default function PublicReportPage({ onGoToLogin }: PublicReportPageProps)
                       </div>
                     </div>
 
+                    {/* File Upload Component */}
+                    <div className="border border-white/5 bg-[#05080F]/40 rounded-xl p-4">
+                      <label className="block text-xs font-semibold text-slate-300 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                        <Paperclip className="w-3.5 h-3.5 text-emerald-400" /> Evidence Attachments
+                      </label>
+                      <input 
+                        type="file" 
+                        multiple 
+                        onChange={e => {
+                          if (e.target.files) {
+                            setSelectedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
+                          }
+                        }}
+                        className="hidden" 
+                        id="pub-files-input" 
+                      />
+                      <button
+                        type="button"
+                        onClick={() => document.getElementById("pub-files-input")?.click()}
+                        className="w-full py-2.5 px-4 border border-dashed border-white/10 hover:border-emerald-500/30 rounded-xl bg-white/2 hover:bg-emerald-500/2 flex items-center justify-center gap-2 transition text-slate-400 hover:text-emerald-400 text-xs font-mono font-bold"
+                      >
+                        <Upload className="w-4 h-4 text-slate-500" /> CHOOSE EVIDENCE FILES (IMAGES, PDF, TXT, LOGS)...
+                      </button>
+
+                      {selectedFiles.length > 0 && (
+                        <div className="mt-3 space-y-1.5">
+                          {selectedFiles.map((file, idx) => (
+                            <div key={idx} className="flex justify-between items-center bg-slate-900/50 border border-white/5 px-3 py-1.5 rounded-lg text-xs font-mono">
+                              <span className="truncate max-w-[80%]">{file.name} ({(file.size / 1024).toFixed(1)} KB)</span>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== idx))}
+                                className="text-slate-500 hover:text-red-400 p-0.5"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
                     <button type="submit" disabled={isSubmitting} id="pub-submit"
                       className={`w-full py-3 rounded text-sm flex items-center justify-center gap-2 font-bold tracking-widest uppercase transition ${
                         isSubmitting ? "bg-[#0A0E1A] text-slate-500 border border-white/10 cursor-not-allowed" : "btn-accent"
@@ -425,57 +486,49 @@ export default function PublicReportPage({ onGoToLogin }: PublicReportPageProps)
 
         {/* ── Track View ── */}
         {view === "track" && (
-          <div className="max-w-xl mx-auto">
-            <div className="rounded-2xl border border-white/8 bg-[#05080F]/60 p-6">
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-1 h-7 bg-blue-400 rounded-full" />
-                <div>
-                  <h2 className="font-grotesk font-bold text-white text-base">Track Your Report</h2>
-                  <p className="text-xs text-slate-500">Enter the Incident ID you received when you submitted your report</p>
-                </div>
+          <div className="w-full">
+            {trackData && !trackData.error ? (
+              <div className="max-w-4xl mx-auto">
+                <CitizenReportTracker 
+                  incidentId={trackData.id} 
+                  initialData={trackData} 
+                  onBack={() => {
+                    setTrackData(null);
+                    setTrackId("");
+                  }} 
+                />
               </div>
-
-              <form onSubmit={handleTrack} className="flex gap-2 mb-4">
-                <input type="text" value={trackId} onChange={e => setTrackId(e.target.value)}
-                  placeholder="e.g. LIT-2026-12345"
-                  className="glass-input flex-1 px-4 py-3 text-sm font-mono" id="track-id-input" />
-                <button type="submit" disabled={tracking}
-                  className="btn-accent px-5 py-2.5 rounded text-sm font-bold flex items-center gap-2 whitespace-nowrap">
-                  {tracking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
-                  Track
-                </button>
-              </form>
-
-              {trackData && !trackData.error && (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-[#05080F]/60 border border-white/8 rounded-lg p-3">
-                      <span className="text-[9px] text-slate-500 uppercase block">Status</span>
-                      <span className="text-sm font-bold text-white">{trackData.status}</span>
-                    </div>
-                    <div className="bg-[#05080F]/60 border border-white/8 rounded-lg p-3">
-                      <span className="text-[9px] text-slate-500 uppercase block">Severity</span>
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded border font-mono ${sevColor(trackData.severity)}`}>{trackData.severity}</span>
+            ) : (
+              <div className="max-w-xl mx-auto">
+                <div className="rounded-2xl border border-white/8 bg-[#05080F]/60 p-6">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-1 h-7 bg-blue-400 rounded-full" />
+                    <div>
+                      <h2 className="font-grotesk font-bold text-white text-base">Track Your Report</h2>
+                      <p className="text-xs text-slate-500">Enter the Incident ID you received when you submitted your report</p>
                     </div>
                   </div>
-                  <div className="bg-[#05080F]/60 border border-white/8 rounded-lg p-3">
-                    <span className="text-[9px] text-slate-500 uppercase block mb-1">Category</span>
-                    <span className="text-sm text-slate-200">{trackData.category}</span>
-                  </div>
-                  {trackData.mitigationAdvice && (
-                    <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
-                      <span className="text-[9px] text-emerald-400 uppercase font-bold block mb-1">MACERT Guidance</span>
-                      <p className="text-xs text-slate-300 leading-relaxed">{trackData.mitigationAdvice}</p>
+
+                  <form onSubmit={handleTrack} className="flex gap-2 mb-4">
+                    <input type="text" value={trackId} onChange={e => setTrackId(e.target.value)}
+                      placeholder="e.g. LIT-2026-12345"
+                      className="glass-input flex-1 px-4 py-3 text-sm font-mono" id="track-id-input" />
+                    <button type="submit" disabled={tracking}
+                      className="btn-accent px-5 py-2.5 rounded text-sm font-bold flex items-center gap-2 whitespace-nowrap">
+                      {tracking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
+                      Track
+                    </button>
+                  </form>
+
+                  {trackData?.error && (
+                    <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3 rounded-lg flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      <span>{trackData.error}</span>
                     </div>
                   )}
                 </div>
-              )}
-              {trackData?.error && (
-                <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3 rounded-lg">
-                  {trackData.error}
-                </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -483,7 +536,7 @@ export default function PublicReportPage({ onGoToLogin }: PublicReportPageProps)
       {/* ── Footer ── */}
       <footer className="border-t border-white/5 bg-[#05080F] px-5 py-3 text-[10px] text-slate-600 font-mono">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>LitSecure Sentinel Public Portal • MACRA National Cyber Defense</span>
+          <span>LitSecure Sentinel Public Portal • MACRA Cyber Incident Reporting & Response</span>
           <div className="flex items-center gap-4">
             <span>MACRA SEC-80B</span>
             <span>MACERT: 112</span>

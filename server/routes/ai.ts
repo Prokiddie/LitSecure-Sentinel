@@ -175,7 +175,7 @@ router.post("/briefing", requireRole("admin", "analyst", "investigator"), async 
 
     const recentIncidents = all.slice(0, 5).map(i => `• [${i.severity}] ${i.title} (${i.reporterOrg})`).join("\n");
 
-    const prompt = `You are the MACERT Malawi Situation Room AI. Generate a CLASSIFIED intelligence briefing for the National Cyber Defense team.
+    const prompt = `You are the MACERT Malawi Cyber Incident Response AI. Generate a security summary briefing for the Incident Triage & Response team.
 
 LIVE DATA AS OF ${new Date().toISOString()}:
 - Total incidents in system: ${total}
@@ -220,7 +220,7 @@ router.post("/insights", requireRole("admin", "analyst", "investigator"), async 
     const { stats } = req.body; // stats passed from the frontend
     const all = (queries.getAllIncidents.all() as any[]).map(mapIncident);
 
-    const prompt = `You are a cybersecurity analytics expert for Malawi's MACERT national CERT.
+    const prompt = `You are a cyber threat analyst for Malawi's MACERT Cyber Incident Reporting & Response Platform.
 
 ANALYTICS SNAPSHOT:
 - Total Incidents: ${stats?.totalIncidents ?? all.length}
@@ -264,7 +264,7 @@ router.post("/report", requireRole("admin", "analyst", "investigator"), async (r
       all.reduce((acc, i) => { acc[i.category] = (acc[i.category] || 0) + 1; return acc; }, {} as Record<string, number>)
     ).sort(([,a],[,b]) => b-a).slice(0,3).map(([k,v]) => `${k} (${v})`).join(", ");
 
-    const prompt = `Generate a professional ${period} cybersecurity incident report for MACRA/MACERT Malawi.
+    const prompt = `Generate a professional ${period} cyber incident reporting and response summary report for MACRA/MACERT Malawi.
 
 REPORT DATA:
 - Report Period: ${period.toUpperCase()}

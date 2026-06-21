@@ -1,6 +1,6 @@
 export type IncidentCategory = 'Fraud' | 'Phishing' | 'Malware' | 'Unauthorized Access' | 'System Breach' | 'Network Intrusion' | 'Unknown';
 export type IncidentSeverity = 'Low' | 'Medium' | 'High' | 'Critical';
-export type IncidentStatus = 'Reported' | 'Investigating' | 'Contained' | 'Resolved';
+export type IncidentStatus = 'Reported' | 'Investigating' | 'Contained' | 'Resolved' | 'Closed';
 
 export type UserRole = 'Admin' | 'Analyst' | 'Investigator' | 'External Organization';
 
@@ -46,6 +46,7 @@ export interface Incident {
   mitigationAdvice: string;
   compromisedIndicators: CompromisedIndicators;
   analysisSummary: string; // AI generated deep dive summary
+  estimatedLoss?: number;  // Optional financial loss estimate in USD
 }
 
 export interface SimulatedLog {

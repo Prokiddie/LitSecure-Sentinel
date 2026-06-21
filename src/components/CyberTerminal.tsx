@@ -13,7 +13,7 @@ interface CommandResult {
 }
 
 const BOOT_SEQUENCE = [
-  { text: "LitSecure Sentinel OS v2.6 — Malawi National Cyber Defense Platform", color: "green" },
+  { text: "LitSecure Sentinel OS v2.6 — Malawi's AI-Powered Cyber Incident Reporting and Response Platform", color: "green" },
   { text: "Copyright (c) 2026 MACRA Cyber Defense Division. All rights reserved.", color: "dim" },
   { text: "", color: "dim" },
   { text: "Initializing secure enclave................... OK", color: "dim" },
@@ -86,7 +86,7 @@ function runBuiltIn(cmd: string, args: string[]): Line[] | null {
     case "version":
       return [
         { text: "LitSecure Sentinel v2.6.0-enterprise", color: "green" },
-        { text: "Platform:    Malawi National Cyber Defense", color: "dim" },
+        { text: "Platform:    Malawi's Cyber Incident Reporting & Response Platform", color: "dim" },
         { text: "Authority:   MACRA / MACERT", color: "dim" },
         { text: "Build:       2026-06-15-PROD", color: "dim" },
         { text: "Node:        Lilongwe Primary SOC Node", color: "dim" },
@@ -462,7 +462,7 @@ export default function CyberTerminal() {
           </div>
           <div>
             <h1 className="font-bebas text-2xl text-white tracking-widest">CYBER COMMAND TERMINAL</h1>
-            <p className="text-[10px] text-slate-500 font-mono">LitSecure Sentinel OS — Malawi Cyber Defense Shell</p>
+            <p className="text-[10px] text-slate-500 font-mono">LitSecure Sentinel OS — Incident Response & Triage Shell</p>
           </div>
         </div>
         <div className="flex items-center gap-3">

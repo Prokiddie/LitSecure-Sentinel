@@ -10,6 +10,10 @@ import { upsertIncidentToSupabase, insertAuditToSupabase, isSupabaseEnabled } fr
 import { sendCriticalIncidentAlert } from "../services/email.js";
 import { calculatePriority } from "../services/priorityEngine.js";
 import { getWarRoomWS } from "../websocket/warroom.js";
+import { db } from "../db/index.js";
+import { scanEvidenceBuffer } from "../services/evidenceScanner.js";
+import { saveBase64File } from "./evidence.js";
+import crypto from "crypto";
 
 
 const router = Router();
@@ -75,7 +79,7 @@ router.post("/bulk-status", validate(bulkStatusSchema), async (req, res) => {
       const row = await queryGet("SELECT * FROM incidents WHERE id = $1", [id]) as any;
       if (!row) continue;
       const inc = mapIncident(row);
-      const updates = [...inc.updates, { id: generateId("upd"), date: now, author: authorName || (req.user?.name) || "Sentinel Responder", message: `Bulk status modification: transitioned to [${status}]`, statusBefore: inc.status, statusAfter: status }];
+      const updates = [...inc.updates, { id: generateId("upd"), date: now, timestamp: now, author: authorName || (req.user?.name) || "Sentinel Responder", message: `Bulk status modification: transitioned to [${status}]`, statusBefore: inc.status, statusAfter: status }];
       
       await queryRun(`
         UPDATE incidents SET status=$1, assigned_investigator=$2, updates=$3, updated_at=$4 WHERE id=$5
@@ -171,7 +175,7 @@ router.post("/", submitLimiter, validate(createIncidentSchema), async (req, res)
     const escapeHtml = (str: string) => str.replace(/</g, "&lt;").replace(/>/g, "&gt;");
     
     const { title, description, reporterName, reporterContact, reporterOrg, evidenceUrl,
-            sector = "", affectedUsers = 0, estimatedLoss = 0 } = req.body;
+            sector = "", affectedUsers = 0, estimatedLoss = 0, files = [] } = req.body;
 
     const cleanTitle = escapeHtml(title.trim().substring(0, 300));
     const cleanDescription = escapeHtml(description.trim().substring(0, 5000));
@@ -193,6 +197,77 @@ router.post("/", submitLimiter, validate(createIncidentSchema), async (req, res)
     const now = new Date().toISOString();
     const id  = `LIT-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
 
+    // ── Scan and save any uploaded files ──────────────────────────────────────
+    const processedFiles: { file: any; diskPath: string; size: number; sha256: string }[] = [];
+    if (Array.isArray(files) && files.length > 0) {
+      for (const file of files) {
+        if (!file.fileName || !file.fileData) continue;
+        const base64 = file.fileData.replace(/^data:[^;]+;base64,/, "");
+        const buffer = Buffer.from(base64, "base64");
+
+        const scanResult = await scanEvidenceBuffer(buffer, file.fileName);
+        if (!scanResult.safe) {
+          try {
+            await queryRun(`
+              INSERT INTO audit_logs (id,timestamp,user_name,user_role,action,details,entity_type,entity_id)
+              VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+            `, [
+              generateId("aud"),
+              now,
+              cleanReporterName,
+              "public",
+              "EVIDENCE_MALWARE_BLOCKED",
+              `Malicious file blocked during submission: "${file.fileName}" — ${scanResult.threat}. ${scanResult.details || ""}`,
+              "incident_evidence",
+              id,
+            ]);
+          } catch {}
+          return res.status(422).json({
+            error:   "MALWARE_DETECTED",
+            message: `File "${file.fileName}" rejected by automated security filters: ${scanResult.threat}`,
+            details: scanResult.details,
+            sha256:  scanResult.sha256,
+          });
+        }
+
+        const saved = saveBase64File(file.fileData, file.fileName);
+        processedFiles.push({ file, ...saved });
+      }
+    }
+
+    const updates = [
+      {
+        id: generateId("upd"),
+        date: now,
+        timestamp: now,
+        author: "System (Portal Form)",
+        message: "Report Submitted: Submitted via portal intake.",
+        statusBefore: "None",
+        statusAfter: "Reported"
+      },
+      {
+        id: generateId("upd"),
+        date: now,
+        timestamp: now,
+        author: "System (AI Engine)",
+        message: `AI Classified: Automated classification - Category: ${aiResult.category}, Severity: ${aiResult.severity}, Confidence: ${aiResult.confidence || 0}%`,
+        statusBefore: "Reported",
+        statusAfter: "Reported"
+      }
+    ];
+
+    for (const p of processedFiles) {
+      updates.push({
+        id: generateId("upd"),
+        date: now,
+        timestamp: now,
+        author: "System",
+        message: `Evidence Added: "${p.file.fileName}"`,
+        statusBefore: "Reported",
+        statusAfter: "Reported"
+      });
+    }
+
     const row = {
       id,
       title:                  cleanTitle,
@@ -204,12 +279,12 @@ router.post("/", submitLimiter, validate(createIncidentSchema), async (req, res)
       reporter_contact: cleanReporterContact,
       reporter_org: cleanReporterOrg,
       incident_date: now,
-      evidence_url: evidenceUrl || null,
+      evidence_url: processedFiles.length > 0 ? processedFiles[0].diskPath : (evidenceUrl || null),
       assigned_investigator: null,
       mitigation_advice: aiResult.mitigationAdvice,
       compromised_indicators: JSON.stringify(aiResult.compromisedIndicators),
       analysis_summary: aiResult.analysisSummary,
-      updates: "[]",
+      updates: JSON.stringify(updates),
       created_at: now,
       updated_at: now,
     };
@@ -223,6 +298,41 @@ router.post("/", submitLimiter, validate(createIncidentSchema), async (req, res)
       row.evidence_url, row.assigned_investigator, row.mitigation_advice,
       row.compromised_indicators, row.analysis_summary, row.updates, row.created_at, row.updated_at
     ]);
+
+    // Save evidence entries
+    for (const p of processedFiles) {
+      const fileId = `EVD-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+      const custodyEntry = {
+        action: "UPLOADED",
+        actor: cleanReporterName,
+        actorRole: "user",
+        actorId: "user",
+        timestamp: now,
+        note: `File uploaded during report submission.`,
+        ipAddress: req.ip || "unknown"
+      };
+
+      db.prepare(`
+        INSERT INTO incident_evidence (id, incident_id, file_name, file_url, file_type, file_size, sha256_hash, chain_of_custody, tags, uploaded_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(fileId, id, p.file.fileName, p.diskPath, p.file.fileType || "screenshot", p.size, p.sha256, JSON.stringify([custodyEntry]), JSON.stringify([]), now);
+
+      try {
+        await queryRun(`
+          INSERT INTO audit_logs (id,timestamp,user_name,user_role,action,details,entity_type,entity_id)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        `, [
+          generateId("aud"),
+          now,
+          cleanReporterName,
+          "user",
+          "EVIDENCE_UPLOAD",
+          `Uploaded evidence file "${p.file.fileName}" during submission for incident ${id}`,
+          "incident_evidence",
+          fileId,
+        ]);
+      } catch {}
+    }
 
     // ── Persist priority + context fields ──────────────────────────────────────────
     try {
@@ -397,9 +507,11 @@ router.post("/:id/status", validate(updateIncidentSchema), async (req, res) => {
 
     const updates = [...incident.updates];
     if (updateMessage) {
+      const nowTime = new Date().toISOString();
       updates.push({
         id: generateId("upd"),
-        date: new Date().toISOString(),
+        date: nowTime,
+        timestamp: nowTime,
         author: authorName || req.user?.name || "Sentinel Responder",
         message: updateMessage,
         statusBefore: prevStatus,
@@ -467,6 +579,7 @@ router.patch("/:id", requireRole("admin", "super_admin", "gov_admin", "soc_manag
       updates.push({
         id:       generateId("upd"),
         date:     now,
+        timestamp: now,
         author:   req.user?.name || "Sentinel Analyst",
         message:  note.trim(),
         statusBefore: incident.status,

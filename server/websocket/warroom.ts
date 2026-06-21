@@ -210,6 +210,14 @@ class WarRoomWSServer {
     this.broadcastToChannel("global", { type: "SYSTEM_UPDATE", payload });
   }
 
+  /** Called when an incident's messages or evidence are updated (citizen portal). */
+  public broadcastIncidentUpdate(incidentId: string, payload: object): void {
+    this.broadcastToChannel("global", {
+      type: "INCIDENT_UPDATE",
+      payload: { incidentId, ...payload, ts: new Date().toISOString() },
+    });
+  }
+
   public get connectedCount(): number {
     return this.clients.size;
   }

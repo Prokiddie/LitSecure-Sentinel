@@ -19,6 +19,9 @@ import {
   upsertIncidentToSupabase,
   insertAuditToSupabase,
 } from "../db/supabase-client.js";
+import { scanEvidenceBuffer } from "../services/evidenceScanner.js";
+import { saveBase64File } from "./evidence.js";
+import crypto from "crypto";
 
 const router = Router();
 
@@ -49,6 +52,7 @@ router.post("/report", publicReportLimiter, async (req: Request, res: Response) 
     affectedUsers = 0,
     estimatedLoss = 0,
     source        = "Public Portal",  // track where report came from
+    files         = [],
   } = req.body;
 
   // ── Basic validation ────────────────────────────────────────────────────────
@@ -91,6 +95,71 @@ router.post("/report", publicReportLimiter, async (req: Request, res: Response) 
     const now = new Date().toISOString();
     const id  = `LIT-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
 
+    // ── Scan and save any uploaded files ──────────────────────────────────────
+    const processedFiles: { file: any; diskPath: string; size: number; sha256: string }[] = [];
+    if (Array.isArray(files) && files.length > 0) {
+      for (const file of files) {
+        if (!file.fileName || !file.fileData) continue;
+        const base64 = file.fileData.replace(/^data:[^;]+;base64,/, "");
+        const buffer = Buffer.from(base64, "base64");
+
+        const scanResult = await scanEvidenceBuffer(buffer, file.fileName);
+        if (!scanResult.safe) {
+          try {
+            queries.insertAuditLog?.run?.({
+              id:          generateId("aud"),
+              timestamp:   now,
+              user_name:   clean.reporterName,
+              user_role:   "public",
+              action:      "EVIDENCE_MALWARE_BLOCKED",
+              details:     `Malicious file blocked during submission: "${file.fileName}" — ${scanResult.threat}. ${scanResult.details || ""}`,
+              entity_type: "incident_evidence",
+              entity_id:   id,
+            });
+          } catch {}
+          return res.status(422).json({
+            error:   "MALWARE_DETECTED",
+            message: `File "${file.fileName}" rejected by automated security filters: ${scanResult.threat}`,
+            details: scanResult.details,
+            sha256:  scanResult.sha256,
+          });
+        }
+
+        const saved = saveBase64File(file.fileData, file.fileName);
+        processedFiles.push({ file, ...saved });
+      }
+    }
+
+    const updates = [
+      {
+        id: generateId("upd"),
+        date: now,
+        author: "System (Citizen Portal)",
+        message: "Report Submitted: Submitted via Web Portal by citizen.",
+        statusBefore: "None",
+        statusAfter: "Reported"
+      },
+      {
+        id: generateId("upd"),
+        date: now,
+        author: "System (AI Engine)",
+        message: `AI Classified: Automated classification - Category: ${aiResult.category}, Severity: ${aiResult.severity}, Confidence: ${aiResult.confidence || 0}%`,
+        statusBefore: "Reported",
+        statusAfter: "Reported"
+      }
+    ];
+
+    for (const p of processedFiles) {
+      updates.push({
+        id: generateId("upd"),
+        date: now,
+        author: "System",
+        message: `Evidence Added: "${p.file.fileName}"`,
+        statusBefore: "Reported",
+        statusAfter: "Reported"
+      });
+    }
+
     // ── SQLite insert ─────────────────────────────────────────────────────────
     const row = {
       id,
@@ -103,16 +172,48 @@ router.post("/report", publicReportLimiter, async (req: Request, res: Response) 
       reporter_contact:       clean.reporterContact,
       reporter_org:           clean.reporterOrg,
       incident_date:          now,
-      evidence_url:           null,
+      evidence_url:           processedFiles.length > 0 ? processedFiles[0].diskPath : null,
       assigned_investigator:  null,
       mitigation_advice:      aiResult.mitigationAdvice,
       compromised_indicators: JSON.stringify(aiResult.compromisedIndicators),
       analysis_summary:       aiResult.analysisSummary,
-      updates:                "[]",
+      updates:                JSON.stringify(updates),
       created_at:             now,
       updated_at:             now,
     };
     queries.insertIncident.run(row);
+
+    // Save evidence entries
+    for (const p of processedFiles) {
+      const fileId = `EVD-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+      const custodyEntry = {
+        action: "UPLOADED",
+        actor: "Citizen (Public Portal)",
+        actorRole: "public",
+        actorId: "public",
+        timestamp: now,
+        note: `File uploaded during report submission and SHA-256 hash computed.`,
+        ipAddress: req.ip || "unknown"
+      };
+
+      db.prepare(`
+        INSERT INTO incident_evidence (id, incident_id, file_name, file_url, file_type, file_size, sha256_hash, chain_of_custody, tags, uploaded_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(fileId, id, p.file.fileName, p.diskPath, p.file.fileType || "screenshot", p.size, p.sha256, JSON.stringify([custodyEntry]), JSON.stringify([]), now);
+
+      try {
+        queries.insertAuditLog?.run?.({
+          id:          generateId("aud"),
+          timestamp:   now,
+          user_name:   clean.reporterName,
+          user_role:   "public",
+          action:      "EVIDENCE_UPLOAD",
+          details:     `Uploaded evidence file "${p.file.fileName}" during submission for incident ${id}`,
+          entity_type: "incident_evidence",
+          entity_id:   fileId,
+        });
+      } catch {}
+    }
 
     // ── Priority fields update ────────────────────────────────────────────────
     try {
@@ -241,12 +342,16 @@ router.post("/report", publicReportLimiter, async (req: Request, res: Response) 
 // ─── GET /api/public/track/:id — citizen can look up their own report ──────────
 router.get("/track/:id", (req: Request, res: Response) => {
   const { id } = req.params;
-  // Only return safe public fields — no internal investigator notes
   try {
     const row = (db.prepare(
-      "SELECT id, title, category, severity, status, incident_date, mitigation_advice, analysis_summary FROM incidents WHERE id = ?"
+      "SELECT id, title, category, severity, status, incident_date, mitigation_advice, analysis_summary, updates FROM incidents WHERE id = ?"
     ).get(id)) as any;
     if (!row) return res.status(404).json({ error: "NOT_FOUND", message: "No incident found with that ID." });
+
+    const evidenceRows = db.prepare(
+      "SELECT id, file_name, file_type, file_size, uploaded_at FROM incident_evidence WHERE incident_id = ? ORDER BY uploaded_at DESC"
+    ).all(id) as any[];
+
     return res.json({
       id:              row.id,
       title:           row.title,
@@ -256,9 +361,176 @@ router.get("/track/:id", (req: Request, res: Response) => {
       incidentDate:    row.incident_date,
       mitigationAdvice: row.mitigation_advice,
       analysisSummary: row.analysis_summary,
+      updates:         JSON.parse(row.updates || "[]"),
+      evidence:        evidenceRows,
     });
   } catch {
     return res.status(500).json({ error: "SERVER_ERROR" });
+  }
+});
+
+// ─── GET /api/public/track/:id/updates — get updates ─────────────────────────
+router.get("/track/:id/updates", (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const row = db.prepare("SELECT updates FROM incidents WHERE id = ?").get(id) as any;
+    if (!row) return res.status(404).json({ error: "NOT_FOUND", message: "Incident not found." });
+    return res.json(JSON.parse(row.updates || "[]"));
+  } catch {
+    return res.status(500).json({ error: "SERVER_ERROR" });
+  }
+});
+
+// ─── POST /api/public/track/:id/message — citizen posts message ──────────────
+router.post("/track/:id/message", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { message, authorName } = req.body;
+    if (!message || typeof message !== "string" || !message.trim()) {
+      return res.status(400).json({ error: "INVALID_MESSAGE", message: "Message is required." });
+    }
+    const row = db.prepare("SELECT updates, status FROM incidents WHERE id = ?").get(id) as any;
+    if (!row) return res.status(404).json({ error: "NOT_FOUND", message: "Incident not found." });
+
+    const updates = JSON.parse(row.updates || "[]");
+    const now = new Date().toISOString();
+    const newUpdate = {
+      id: generateId("upd"),
+      date: now,
+      author: authorName || "Citizen (Reporter)",
+      message: message.trim(),
+      statusBefore: row.status,
+      statusAfter: row.status
+    };
+    updates.push(newUpdate);
+
+    db.prepare("UPDATE incidents SET updates = ?, updated_at = ? WHERE id = ?").run(
+      JSON.stringify(updates), now, id
+    );
+
+    try {
+      queries.insertAuditLog?.run?.({
+        id:          generateId("aud"),
+        timestamp:   now,
+        user_name:   authorName || "Citizen",
+        user_role:   "public",
+        action:      "Incident Message Added",
+        details:     `Citizen posted a message to incident ${id}`,
+        entity_type: "incident",
+        entity_id:   id,
+      });
+    } catch {}
+
+    const ws = getWarRoomWS();
+    if (ws) {
+      ws.broadcastIncidentUpdate(id, { updates });
+    }
+
+    return res.json({ success: true, updates });
+  } catch (err: any) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── POST /api/public/track/:id/upload — citizen uploads file ────────────────
+router.post("/track/:id/upload", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { fileName, fileType, fileData, description } = req.body;
+    if (!fileName || !fileType || !fileData) {
+      return res.status(400).json({ message: "fileName, fileType, and fileData are required." });
+    }
+    const incident = db.prepare("SELECT id, title, updates, status FROM incidents WHERE id = ?").get(id) as any;
+    if (!incident) return res.status(404).json({ message: "Incident not found." });
+
+    const base64 = fileData.replace(/^data:[^;]+;base64,/, "");
+    const buffer = Buffer.from(base64, "base64");
+
+    const scanResult = await scanEvidenceBuffer(buffer, fileName);
+    if (!scanResult.safe) {
+      try {
+        queries.insertAuditLog?.run?.({
+          id:          generateId("aud"),
+          timestamp:   new Date().toISOString(),
+          user_name:   "Citizen",
+          user_role:   "public",
+          action:      "EVIDENCE_MALWARE_BLOCKED",
+          details:     `Malicious file blocked: "${fileName}" — ${scanResult.threat}. ${scanResult.details || ""}`,
+          entity_type: "incident_evidence",
+          entity_id:   id,
+        });
+      } catch {}
+      return res.status(422).json({
+        error:   "MALWARE_DETECTED",
+        message: `File "${fileName}" rejected by automated security filters: ${scanResult.threat}`,
+        details: scanResult.details,
+        sha256:  scanResult.sha256,
+      });
+    }
+
+    const { diskPath, size, sha256 } = saveBase64File(fileData, fileName);
+    const fileId = `EVD-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+    const now = new Date().toISOString();
+
+    const custodyEntry = {
+      action: "UPLOADED",
+      actor: "Citizen (Public Portal)",
+      actorRole: "public",
+      actorId: "public",
+      timestamp: now,
+      note: description || `File uploaded post-submission.`,
+      ipAddress: req.ip || "unknown"
+    };
+
+    db.prepare(`
+      INSERT INTO incident_evidence (id, incident_id, file_name, file_url, file_type, file_size, sha256_hash, chain_of_custody, tags, uploaded_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(fileId, id, fileName, diskPath, fileType, size, sha256, JSON.stringify([custodyEntry]), JSON.stringify([]), now);
+
+    const updates = JSON.parse(incident.updates || "[]");
+    updates.push({
+      id: generateId("upd"),
+      date: now,
+      author: "System",
+      message: `Evidence Added: "${fileName}"`,
+      statusBefore: incident.status,
+      statusAfter: incident.status
+    });
+
+    db.prepare("UPDATE incidents SET updates = ?, updated_at = ? WHERE id = ?").run(
+      JSON.stringify(updates), now, id
+    );
+
+    try {
+      queries.insertAuditLog?.run?.({
+        id:          generateId("aud"),
+        timestamp:   now,
+        user_name:   "Citizen",
+        user_role:   "public",
+        action:      "EVIDENCE_UPLOAD",
+        details:     `Uploaded evidence file "${fileName}" for incident ${id}`,
+        entity_type: "incident_evidence",
+        entity_id:   fileId,
+      });
+    } catch {}
+
+    const ws = getWarRoomWS();
+    if (ws) {
+      ws.broadcastIncidentUpdate(id, { updates });
+    }
+
+    return res.json({
+      success: true,
+      id: fileId,
+      fileName,
+      fileType,
+      fileSize: size,
+      sha256Hash: sha256,
+      uploadedAt: now,
+      chainOfCustody: [custodyEntry]
+    });
+  } catch (err: any) {
+    return res.status(500).json({ message: err.message });
   }
 });
 

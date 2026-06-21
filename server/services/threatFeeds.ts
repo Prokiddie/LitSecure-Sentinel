@@ -273,6 +273,10 @@ async function fetchKasperskyOpenTIP(): Promise<void> {
 // ─── Scheduler ───────────────────────────────────────────────────────────────
 
 export function startThreatFeedScheduler(): void {
+  if (process.env.DISABLE_BACKGROUND_THREAT_FEEDS === "true") {
+    console.log("[ThreatFeed] Scheduler disabled via DISABLE_BACKGROUND_THREAT_FEEDS flag.");
+    return;
+  }
   if (schedulerRunning) return;
   schedulerRunning = true;
 

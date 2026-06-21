@@ -32,11 +32,12 @@ jobs:
         run: npm run build
 
       - name: Run Unit & Integration Tests
-        run: npm run test -- --run
+        run: npm test
         env:
           NODE_ENV: test
           JWT_SECRET: devsecops-test-jwt-secret-32-chars!!
           REFRESH_TOKEN_SECRET: devsecops-test-refresh-secret-32chars!
+          ENCRYPTION_KEY: devsecops-test-encryption-key-32chars!
           DATABASE_PATH: ":memory:"
 
       - name: ⚙️ Semgrep SAST Scan
@@ -110,6 +111,7 @@ jobs:
         env:
           JWT_SECRET: devsecops-dast-jwt-test-secret-key-32chars-min
           REFRESH_TOKEN_SECRET: devsecops-dast-refresh-test-secret-key-32chars
+          ENCRYPTION_KEY: devsecops-dast-encryption-key-32chars-min
           DATABASE_PATH: /tmp/dast-test.db
 
       - name: ⚡ OWASP ZAP Baseline API Scan

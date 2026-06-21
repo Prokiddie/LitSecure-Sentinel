@@ -574,13 +574,40 @@ interface Props {
   token: string;
   role: string;
   activeAgency?: string;
+  onEscalateToCase?: (incidentId: string) => void;
 }
 
-export default function TriageWorkspace({ token, role, activeAgency }: Props) {
+export default function TriageWorkspace({ token, role, activeAgency, onEscalateToCase }: Props) {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState("");
   const [selected, setSelected]   = useState<Incident | null>(null);
+  const [escalating, setEscalating] = useState(false);
+
+  const handleEscalateClick = async () => {
+    if (!selected) return;
+    setEscalating(true);
+    try {
+      const res = await fetch(`/api/incidents/${selected.id}/status`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          status: "Investigating",
+          updateMessage: "Incident escalated to a case under investigation."
+        })
+      });
+      if (res.ok) {
+        onEscalateToCase?.(selected.id);
+      }
+    } catch (err) {
+      console.error("Escalation error:", err);
+    } finally {
+      setEscalating(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -700,6 +727,15 @@ export default function TriageWorkspace({ token, role, activeAgency }: Props) {
                     )}
                   </div>
                 </div>
+                {selected.status === "Reported" && (
+                  <button
+                    onClick={handleEscalateClick}
+                    disabled={escalating}
+                    className="px-3 py-1.5 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white rounded-lg text-[10px] font-mono font-bold transition flex items-center gap-1 shrink-0 mr-2 shadow-[0_0_12px_rgba(239,68,68,0.2)] animate-pulse"
+                  >
+                    {escalating ? "Escalating..." : "🚨 Escalate to Case"}
+                  </button>
+                )}
                 <button onClick={() => setSelected(null)} className="text-slate-600 hover:text-white transition">
                   <X className="w-4 h-4" />
                 </button>

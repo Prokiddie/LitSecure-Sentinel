@@ -55,7 +55,7 @@ export default function AiAssistant({ defaultIncidentId = "" }: { defaultInciden
     // Welcome message
     setMessages([{
       id: uid(), role: "assistant", timestamp: new Date(),
-      content: `# 🛡️ SENTINEL AI — SOC Intelligence Assistant\n\nI'm your AI-powered Security Operations Center assistant for Malawi's national cyber defense network.\n\n**I can help you:**\n- Analyze and interpret cyber incidents\n- Generate incident response plans\n- Identify threat patterns across your data\n- Provide mitigation recommendations\n- Answer questions about specific cases\n\nSelect an incident from the dropdown to load its full context, or just ask me anything about your security posture.`,
+      content: `# 🛡️ SENTINEL AI — Incident Response & Triage Assistant\n\nI'm your AI-powered Incident Response and Triage assistant for Malawi's cyber incident reporting network.\n\n**I can help you:**\n- Analyze and interpret citizen cyber incidents\n- Generate triage recommendations\n- Identify recurring threat trends across reports\n- Provide containment and mitigation guidance\n- Answer questions about specific reported cases\n\nSelect an incident from the dropdown to load its full context, or just ask me anything about incoming incidents.`,
     }]);
   }, []);
 

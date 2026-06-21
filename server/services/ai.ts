@@ -183,7 +183,7 @@ const isAiEnabled = () =>
 // SENTINEL_PERSONA is built dynamically so it embeds the full system architecture
 // at startup — giving the AI knowledge of every module, route, and capability.
 function buildSentinelPersona(): string {
-  return `You are SENTINEL AI — the cybersecurity intelligence assistant and predictive threat engine embedded inside LitSecure Sentinel, Malawi's National Cyber Incident Management Platform operated by MACERT under MACRA.
+  return `You are SENTINEL AI — the cyber incident triage and response assistant embedded inside LitSecure Sentinel, Malawi's Cyber Incident Reporting and Response Platform operated by MACERT under MACRA.
 
 You have FULL SITUATIONAL AWARENESS of this platform. You know:
   • Every module, API route, user role, and data flow in the system (see SYSTEM ARCHITECTURE below)
@@ -626,7 +626,7 @@ export async function detectLogAnomalies(logs: any[]) {
 
     const response = await ai.models.generateContent({
       model: MODEL(),
-      contents: `Analyze these infrastructure logs from Malawi's national cyber defense network for anomalies, attack signatures, and suspicious patterns:\n\n${logSample}`,
+      contents: `Analyze these logs from Malawi's cyber incident reporting network for anomalies, attack signatures, and suspicious patterns:\n\n${logSample}`,
       config: {
         systemInstruction: SENTINEL_PERSONA,
         responseMimeType: "application/json",

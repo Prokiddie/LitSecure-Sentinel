@@ -20,7 +20,7 @@ fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
 const router = Router();
 
 // ─── Helper: parse base64 upload ─────────────────────────────────────────────
-function saveBase64File(base64Data: string, fileName: string): { diskPath: string; size: number; sha256: string } {
+export function saveBase64File(base64Data: string, fileName: string): { diskPath: string; size: number; sha256: string } {
   const base64 = base64Data.replace(/^data:[^;]+;base64,/, "");
   const buffer = Buffer.from(base64, "base64");
 

@@ -77,20 +77,7 @@ const riskColor = (score: number) => {
 };
 
 export default function PortalDashboard({ incidents, stats }: PortalDashboardProps) {
-  const [blockedCount, setBlockedCount] = useState(() => {
-    const hours = new Date().getHours();
-    const minutes = new Date().getMinutes();
-    return 284520 + hours * 300 + minutes * 5;
-  });
-
   const [detailModal, setDetailModal] = useState<"incidents" | "assets" | "sla" | "uptime" | "containment" | null>(null);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setBlockedCount(prev => prev + Math.floor(Math.random() * 3) + 1);
-    }, 1200);
-    return () => clearInterval(timer);
-  }, []);
 
   // Compute stats reactively from the incidents list
   const activeIncidents = useMemo(() => {
@@ -191,17 +178,6 @@ export default function PortalDashboard({ incidents, stats }: PortalDashboardPro
           </div>
           
           <div className="flex items-center gap-6">
-            {/* Ticking Counter */}
-            <div className="text-right">
-              <span className="text-[9px] uppercase tracking-wider font-mono text-slate-500 block">Edge Attack Vectors Blocked</span>
-              <span className="text-2xl font-bold font-mono text-[#FFD600] tracking-wider animate-pulse">
-                {blockedCount.toLocaleString()}
-              </span>
-            </div>
-            
-            <div className="w-px h-10 bg-white/10" />
-
-            {/* Live Severity Index Meter */}
             <div className="space-y-1.5 w-40">
               <div className="flex justify-between text-[9px] font-mono">
                 <span className="text-slate-500 uppercase">Live Alert Priority</span>

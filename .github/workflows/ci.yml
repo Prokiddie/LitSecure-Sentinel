@@ -80,6 +80,7 @@ jobs:
           # Placeholder secrets for CI — no real credentials
           JWT_SECRET: ci-test-jwt-secret-32-chars-minimum!!
           REFRESH_TOKEN_SECRET: ci-test-refresh-secret-32-chars-min!
+          ENCRYPTION_KEY: ci-test-encryption-key-32-chars-min!!
           JWT_EXPIRY: 1h
           DATABASE_PATH: ":memory:"
           # Intentionally left blank — disables Supabase/PostgreSQL in test mode

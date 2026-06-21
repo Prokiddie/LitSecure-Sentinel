@@ -4,11 +4,12 @@ import {
   CheckCircle, Clock, LogOut, User,
   ChevronRight, ExternalLink, Phone,
   Globe, Bell, Megaphone, Lock, Eye,
-  ArrowRight, Zap, Heart
+  ArrowRight, Zap, Heart, MessageSquare
 } from "lucide-react";
 import { LitSecureWordmark } from "./LitSecureLogo";
 import ReportForm from "./ReportForm";
 import CyberAwarenessHub from "./CyberAwarenessHub";
+import CitizenReportTracker from "./CitizenReportTracker";
 
 interface PublicPortalProps {
   user: { id: string; name: string; email: string; role: string };
@@ -44,6 +45,7 @@ const QUICK_LINKS = [
 function MyReports({ token, userName }: { token: string; userName: string }) {
   const [incidents, setIncidents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeIncidentId, setActiveIncidentId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/incidents", { headers: { Authorization: `Bearer ${token}` } })
@@ -68,6 +70,17 @@ function MyReports({ token, userName }: { token: string; userName: string }) {
     );
   }
 
+  if (activeIncidentId) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <CitizenReportTracker 
+          incidentId={activeIncidentId} 
+          onBack={() => setActiveIncidentId(null)} 
+        />
+      </div>
+    );
+  }
+
   if (incidents.length === 0) {
     return (
       <div className="text-center py-16 text-slate-600">
@@ -83,9 +96,13 @@ function MyReports({ token, userName }: { token: string; userName: string }) {
       {incidents.map(inc => {
         const st = STATUS_STYLE[inc.status] || STATUS_STYLE["Open"];
         return (
-          <div key={inc.id} className="rounded-2xl border border-white/8 bg-[#05080F]/60 p-4 space-y-2.5">
+          <div 
+            key={inc.id} 
+            onClick={() => setActiveIncidentId(inc.id)}
+            className="rounded-2xl border border-white/8 bg-[#05080F]/60 p-4 space-y-2.5 cursor-pointer hover:border-emerald-500/30 hover:bg-[#05080F]/80 transition group"
+          >
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <code className="text-[9px] font-mono text-slate-500">{inc.id}</code>
                   <span className={`text-[8px] font-bold uppercase px-1.5 py-0.5 rounded border font-mono flex items-center gap-1 ${st.badge}`}>
@@ -98,8 +115,11 @@ function MyReports({ token, userName }: { token: string; userName: string }) {
                     "text-slate-400 border-slate-500/20 bg-slate-500/5"
                   }`}>{inc.severity}</span>
                 </div>
-                <h4 className="text-sm font-bold text-white leading-snug">{inc.title}</h4>
+                <h4 className="text-sm font-bold text-white leading-snug group-hover:text-emerald-400 transition">{inc.title}</h4>
               </div>
+              <button className="shrink-0 flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-400/80 group-hover:text-emerald-400 bg-emerald-500/5 border border-emerald-500/20 rounded px-2.5 py-1 transition">
+                <MessageSquare className="w-3 h-3" /> Track & Chat
+              </button>
             </div>
             <div className="flex items-center gap-4 text-[10px] text-slate-500 font-mono">
               <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{new Date(inc.incidentDate || inc.created_at).toLocaleDateString()}</span>

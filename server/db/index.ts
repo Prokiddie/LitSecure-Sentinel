@@ -692,9 +692,23 @@ export async function executeDbQuery<T = any>(sql: string, params: any = []): Pr
   if (active) {
     return executePostgresQuery<T>(sql, params);
   } else {
-    // Run on SQLite with parameters, handles encryption/decryption
-    const encryptedParams = encryptParams(params);
-    const stmt = db.prepare(sql);
+    // SQLite fallback — translate PostgreSQL-style $1,$2... placeholders to ? if needed
+    let sqliteSQL = sql;
+    let sqliteParams: any[];
+
+    if (Array.isArray(params)) {
+      // Replace $1, $2 ... $N style with ? for SQLite
+      sqliteSQL = sql.replace(/\$\d+/g, "?");
+      sqliteParams = params;
+    } else if (params && typeof params === "object") {
+      // Named @param style — encryptParams handles object params
+      sqliteParams = params;
+    } else {
+      sqliteParams = [];
+    }
+
+    const encryptedParams = encryptParams(sqliteParams);
+    const stmt = db.prepare(sqliteSQL);
     let rows: any[];
     if (Array.isArray(encryptedParams)) {
       rows = stmt.all(...encryptedParams);
@@ -717,7 +731,35 @@ export async function queryGet<T = any>(sql: string, params: any = []): Promise<
 }
 
 export async function queryRun(sql: string, params: any = []): Promise<void> {
-  await executeDbQuery(sql, params);
+  const active = await isPgActive();
+  if (active) {
+    // Postgres: executePostgresQuery handles all statement types
+    await executePostgresQuery(sql, params);
+    return;
+  }
+
+  // SQLite: must use .run() for INSERT/UPDATE/DELETE (not .all())
+  let sqliteSQL = sql;
+  let sqliteParams: any[];
+
+  if (Array.isArray(params)) {
+    sqliteSQL = sql.replace(/\$\d+/g, "?");
+    sqliteParams = params;
+  } else if (params && typeof params === "object") {
+    sqliteParams = params;
+  } else {
+    sqliteParams = [];
+  }
+
+  const encryptedParams = encryptParams(sqliteParams);
+  const stmt = db.prepare(sqliteSQL);
+  if (Array.isArray(encryptedParams)) {
+    stmt.run(...encryptedParams);
+  } else if (encryptedParams && typeof encryptedParams === "object") {
+    stmt.run(encryptedParams);
+  } else {
+    stmt.run();
+  }
 }
 
 export async function dbTransaction(fn: (query: (sql: string, params?: any) => Promise<any[]>) => Promise<void>): Promise<void> {

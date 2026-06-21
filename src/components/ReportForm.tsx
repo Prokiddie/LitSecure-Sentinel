@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ShieldAlert, AlertTriangle, Send, Loader2, CheckCircle, Smartphone, Globe, Activity, Eye } from "lucide-react";
+import { ShieldAlert, AlertTriangle, Send, Loader2, CheckCircle, Smartphone, Globe, Activity, Eye, Paperclip, X, Upload } from "lucide-react";
 import { Incident } from "../types";
 
 interface ReportFormProps {
@@ -19,6 +19,16 @@ export default function ReportForm({ onIncidentAdded }: ReportFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionResult, setSubmissionResult] = useState<Incident | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+
+  const convertToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = error => reject(error);
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,6 +42,12 @@ export default function ReportForm({ onIncidentAdded }: ReportFormProps) {
     setSubmissionResult(null);
 
     try {
+      const filePromises = selectedFiles.map(async (f) => {
+        const base64 = await convertToBase64(f);
+        return { fileName: f.name, fileType: f.type || "screenshot", fileData: base64 };
+      });
+      const filesPayload = await Promise.all(filePromises);
+
       const response = await fetch("/api/incidents", {
         method: "POST",
         headers: {
@@ -46,16 +62,20 @@ export default function ReportForm({ onIncidentAdded }: ReportFormProps) {
           sector,
           affectedUsers: affectedUsers ? Number(affectedUsers) : 0,
           estimatedLoss: estimatedLoss ? Number(estimatedLoss) : 0,
+          files: filesPayload,
         }),
       });
 
+      const resData = await response.json();
+      if (response.status === 422) {
+        throw new Error(`File rejected: ${resData.message}`);
+      }
       if (!response.ok) {
-        throw new Error("Unable to transmit report to LitSecure Sentinel gateway.");
+        throw new Error(resData.message || "Unable to transmit report to LitSecure Sentinel gateway.");
       }
 
-      const freshIncident: Incident = await response.json();
-      setSubmissionResult(freshIncident);
-      onIncidentAdded(freshIncident);
+      setSubmissionResult(resData);
+      onIncidentAdded(resData);
       
       // Clear inputs
       setTitle("");
@@ -65,6 +85,7 @@ export default function ReportForm({ onIncidentAdded }: ReportFormProps) {
       setSector("");
       setAffectedUsers("");
       setEstimatedLoss("");
+      setSelectedFiles([]);
     } catch (err: any) {
       setError(err?.message || "An unexpected network disruption occurred.");
     } finally {
@@ -333,6 +354,47 @@ export default function ReportForm({ onIncidentAdded }: ReportFormProps) {
           </div>
         </div>
 
+        {/* File Upload Component */}
+        <div className="border border-white/5 bg-[#05080F]/40 rounded-xl p-4">
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+            <Paperclip className="w-3.5 h-3.5 text-emerald-400" /> Evidence Attachments
+          </label>
+          <input 
+            type="file" 
+            multiple 
+            onChange={e => {
+              if (e.target.files) {
+                setSelectedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
+              }
+            }}
+            className="hidden" 
+            id="portal-files-input" 
+          />
+          <button
+            type="button"
+            onClick={() => document.getElementById("portal-files-input")?.click()}
+            className="w-full py-2.5 px-4 border border-dashed border-white/10 hover:border-emerald-500/30 rounded-xl bg-[#05080F]/60 hover:bg-emerald-500/2 flex items-center justify-center gap-2 transition text-slate-400 hover:text-emerald-400 text-xs font-mono font-bold"
+          >
+            <Upload className="w-4 h-4 text-slate-500" /> CHOOSE EVIDENCE FILES (IMAGES, PDF, TXT, LOGS)...
+          </button>
+
+          {selectedFiles.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {selectedFiles.map((file, idx) => (
+                <div key={idx} className="flex justify-between items-center bg-slate-900/50 border border-white/5 px-3 py-1.5 rounded-lg text-xs font-mono">
+                  <span className="truncate max-w-[80%]">{file.name} ({(file.size / 1024).toFixed(1)} KB)</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== idx))}
+                    className="text-slate-500 hover:text-red-400 p-0.5"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="pt-2">
           <button
